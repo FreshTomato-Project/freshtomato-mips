@@ -294,63 +294,46 @@ void del_bsd_defaults(void)
 }
 #endif /* TCONFIG_BCMBSD */
 
-void start_dnsmasq_wet()
+bool is_wet_psta(const char* bridge)
 {
-	FILE *f;
-	const char *nv;
-	char br;
-	char lanN_ifname[] = "lanXX_ifname";
+	char lanN_ifnames[] = "lanXX_ifnames";
+	snprintf(lanN_ifnames, sizeof(lanN_ifnames), "lan%s_ifnames", bridge);
 
-	if ((f = fopen(DNSMASQ_CONF, "w")) == NULL) {
-		logerr(__FUNCTION__, __LINE__, DNSMASQ_CONF);
-		return;
+	char *ifnames;
+	if ((ifnames = strdup(nvram_safe_get(lanN_ifnames))) == NULL) {
+		return FALSE;
 	}
 
-	fprintf(f, "pid-file=/var/run/dnsmasq.pid\n"
-	           "resolv-file=%s\n"				/* the real stuff is here */
-	           "min-port=%u\n"				/* min port used for random src port */
-	           "no-negcache\n"				/* disable negative caching */
-	           "bind-dynamic\n",
-	           dmresolv,
-	           4096);
+	char *ifname;
+	char *p = ifnames;
+	while ((ifname = strsep(&p, " ")) != NULL) {
+		while (*ifname == ' ') {
+			++ifname;
+		}
 
-	for (br = 0; br < BRIDGE_COUNT; br++) {
-		char bridge[2] = "0";
-		if (br != 0)
-			bridge[0] += br;
-		else
-			memset(bridge, 0, sizeof(bridge));
+		trimstr(ifname);
+		if ((*ifname == 0) || (strncasecmp(ifname, "eth", 3) != 0)) {
+			continue;
+		}
 
-		snprintf(lanN_ifname, sizeof(lanN_ifname), "lan%s_ifname", bridge);
-		nv = nvram_safe_get(lanN_ifname);
+		char wl_ifname[NVRAM_MAX_PARAM_LEN];
+		if (osifname_to_nvifname(ifname, wl_ifname, sizeof(wl_ifname)) != 0) {
+			continue;
+		}
 
-		if (strncmp(nv, "br", 2) == 0) {
-			fprintf(f, "interface=%s\n", nv);
-			fprintf(f, "no-dhcp-interface=%s\n", nv);
+		char nvkey[NVRAM_MAX_PARAM_LEN];
+		strlcat_r(wl_ifname, "_mode", nvkey, sizeof(nvkey));
+		const char *value = nvram_get(nvkey);
+		if (value == NULL || *value == 0) {
+			continue;
+		}
+		if (!strncasecmp(value, "wet", 3) || !strncasecmp(value, "psta", 4)) {
+			free(ifnames);
+			return TRUE;
 		}
 	}
-
-	if (nvram_get_int("dnsmasq_debug"))
-		fprintf(f, "log-queries\n");
-
-	if ((nvram_get_int("adblock_enable")) && (f_exists("/etc/dnsmasq.adblock")))
-		fprintf(f, "conf-file=/etc/dnsmasq.adblock\n");
-
-	if (!nvram_get_int("dnsmasq_safe")) {
-		fprintf(f, "%s\n", nvram_safe_get("dnsmasq_custom"));
-		fappend(f, "/etc/dnsmasq.custom");
-	}
-	else
-		logmsg(LOG_WARNING, "Warning! Dnsmasq Custom configuration contains a disruptive syntax error. The Custom configuration is now excluded to allow dnsmasq to operate");
-
-	fappend(f, "/etc/dnsmasq.ipset");
-
-	fclose(f);
-
-	unlink(RESOLV_CONF);
-	symlink("/rom/etc/resolv.conf", RESOLV_CONF); /* nameserver 127.0.0.1 */
-
-	eval("dnsmasq", "-c", "4096", "--log-async");
+	free(ifnames);
+	return FALSE;
 }
 
 void start_dnsmasq()
@@ -388,22 +371,6 @@ void start_dnsmasq()
 
 	if (serialize_restart("dnsmasq", 1))
 		return;
-
-	/* check wireless ethernet bridge (wet) after stop_dnsmasq() */
-	if (foreach_wif(1, NULL, is_wet)) {
-		logmsg(LOG_INFO, "Starting dnsmasq for wireless ethernet bridge mode");
-		start_dnsmasq_wet();
-		return;
-	}
-
-#ifdef TCONFIG_BCMWL6
-	/* check media bridge (psta) after stop_dnsmasq() */
-	if (foreach_wif(1, NULL, is_psta)) {
-		logmsg(LOG_INFO, "Starting dnsmasq for media bridge mode");
-		start_dnsmasq_wet();
-		return;
-	}
-#endif /* TCONFIG_BCMWL6 */
 
 	if ((f = fopen(DNSMASQ_CONF, "w")) == NULL) {
 		logerr(__FUNCTION__, __LINE__, DNSMASQ_CONF);
@@ -534,6 +501,14 @@ void start_dnsmasq()
 		snprintf(lanN_proto, sizeof(lanN_proto), "lan%s_proto", bridge);
 		snprintf(lanN_ifname, sizeof(lanN_ifname), "lan%s_ifname", bridge);
 		snprintf(lanN_ipaddr, sizeof(lanN_ipaddr), "lan%s_ipaddr", bridge);
+
+		if (strcmp(nvram_safe_get(lanN_ifname), "") != 0) {
+			fprintf(f, "interface=%s\n", nvram_safe_get(lanN_ifname));
+			if (is_wet_psta(bridge)) {
+				fprintf(f, "no-dhcp-interface=%s\n", nvram_safe_get(lanN_ifname));
+			}
+		}
+
 		do_dhcpd = nvram_match(lanN_proto, "dhcp");
 		if (do_dhcpd) {
 			do_dhcpd_hosts++;
@@ -542,8 +517,6 @@ void start_dnsmasq()
 			strlcpy(lan, router_ip, sizeof(lan));
 			if ((p = strrchr(lan, '.')) != NULL)
 				*(p + 1) = 0;
-
-			fprintf(f, "interface=%s\n", nvram_safe_get(lanN_ifname));
 
 			snprintf(dhcpN_lease, sizeof(dhcpN_lease), "dhcp%s_lease", bridge);
 			dhcp_lease = nvram_get_int(dhcpN_lease);
@@ -620,10 +593,6 @@ void start_dnsmasq()
 					fprintf(f, "dhcp-option=tag:%s,44,%s\n", nvram_safe_get(lanN_ifname), nvram_safe_get(lanN_ipaddr)); /* netbios-ns */
 			}
 #endif
-		}
-		else {
-			if (strcmp(nvram_safe_get(lanN_ifname), "") != 0)
-				fprintf(f, "interface=%s\n", nvram_safe_get(lanN_ifname));
 		}
 	}
 
