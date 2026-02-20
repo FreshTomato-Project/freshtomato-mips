@@ -53,13 +53,14 @@
 int ipup_main(int argc, char **argv)
 {
 	char *wan_ifname;
-	int proto;
+	int proto, old_ck_pause;
 	char prefix[] = "wanXX";
 	char tmp[100], tmp2[32];
 	char ppplink_file[32];
 	char buf[256];
 	char *value;
 	const char *p;
+	FILE *f;
 
 	if (!wait_action_idle(10))
 		return -1;
@@ -137,8 +138,23 @@ int ipup_main(int argc, char **argv)
 	if ((value = getenv("MTU")))
 		nvram_set(strlcat_r(prefix, "_run_mtu", tmp, sizeof(tmp)), value);
 
+	memset(tmp, 0, sizeof(tmp));
+	snprintf(tmp, sizeof(tmp), "/var/lib/misc/%s_state", prefix);
+	if ((f = fopen(tmp, "w+")) != NULL) {
+		fprintf(f, "1\n"); /* always init with "1" otherwise routes will not be added properly */
+		logmsg(LOG_DEBUG, "*** %s: Did init state file with 1 of prefix %s", __FUNCTION__, prefix);
+		fclose(f);
+	}
+	snprintf(tmp, sizeof(tmp), "%s_ck_pause", prefix);
+	old_ck_pause = nvram_get_int(tmp);
+	nvram_set(tmp, "1");
+	logmsg(LOG_DEBUG, "*** %s: set %s_ck_pause=1 to skip checking on this WAN in mwanroute. Old value was %d", __FUNCTION__, prefix, old_ck_pause);
+
 	logmsg(LOG_DEBUG, "*** OUT %s: to start_wan_done, ifname=%s prefix=%s ...", __FUNCTION__, wan_ifname, prefix);
 	start_wan_done(wan_ifname, prefix);
+
+	nvram_set(tmp, old_ck_pause ? "1" : "0"); /* restore previous value of ck_pause */
+	logmsg(LOG_DEBUG, "*** %s: restored %s_ck_pause to %d", __FUNCTION__, prefix, old_ck_pause);
 
 	return 0;
 }
