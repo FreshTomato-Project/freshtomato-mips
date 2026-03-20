@@ -305,6 +305,85 @@ static int consttime_strcmp(const char *a, const char *b)
 	}
 	return (int)result;
 }
+
+#define LOGIN_FAIL_DIR    "/tmp"
+#define LOGIN_FAIL_MAX    5
+#define LOGIN_FAIL_WINDOW 60
+#define LOGIN_FAIL_DELAY  3
+
+static void login_fail_record(const char *ip)
+{
+	char path[64], buf[32], safe_ip[64];
+	FILE *f;
+	time_t now = time(NULL);
+	int count = 1;
+	time_t first = now;
+	size_t k;
+
+	/* sanitize IP for use in filename - replace colons (IPv6) with underscores */
+	strncpy(safe_ip, ip, sizeof(safe_ip) - 1);
+	safe_ip[sizeof(safe_ip) - 1] = '\0';
+	for (k = 0; safe_ip[k]; k++)
+		if (safe_ip[k] == ':') safe_ip[k] = '_';
+
+	snprintf(path, sizeof(path), LOGIN_FAIL_DIR "/httpd_fail_%s", safe_ip);
+
+	if ((f = fopen(path, "r")) != NULL) {
+		if (fscanf(f, "%ld:%d", &first, &count) == 2) {
+			if (now - first > LOGIN_FAIL_WINDOW) {
+				first = now;
+				count = 1;
+			} else {
+				count++;
+			}
+		}
+		fclose(f);
+	}
+
+	if ((f = fopen(path, "w")) != NULL) {
+		snprintf(buf, sizeof(buf), "%ld:%d", first, count);
+		fputs(buf, f);
+		fclose(f);
+	}
+}
+
+static int login_fail_check(const char *ip)
+{
+	char path[64];
+	FILE *f;
+	time_t now = time(NULL), first = 0;
+	int count = 0;
+
+	size_t k;
+	strncpy(safe_ip, ip, sizeof(safe_ip) - 1);
+	safe_ip[sizeof(safe_ip) - 1] = '\0';
+	for (k = 0; safe_ip[k]; k++)
+		if (safe_ip[k] == ':') safe_ip[k] = '_';
+	snprintf(path, sizeof(path), LOGIN_FAIL_DIR "/httpd_fail_%s", safe_ip);
+	if ((f = fopen(path, "r")) != NULL) {
+		fscanf(f, "%ld:%d", &first, &count);
+		fclose(f);
+	}
+
+	if (count >= LOGIN_FAIL_MAX && (now - first) <= LOGIN_FAIL_WINDOW) {
+		logmsg(LOG_WARNING, "login rate limit hit for %s (%d failures)", ip, count);
+		sleep(LOGIN_FAIL_DELAY);
+		return 1; /* rate limited */
+	}
+	return 0;
+}
+
+static void login_fail_clear(const char *ip)
+{
+	char path[64];
+	size_t k;
+	strncpy(safe_ip, ip, sizeof(safe_ip) - 1);
+	safe_ip[sizeof(safe_ip) - 1] = '\0';
+	for (k = 0; safe_ip[k]; k++)
+		if (safe_ip[k] == ':') safe_ip[k] = '_';
+	snprintf(path, sizeof(path), LOGIN_FAIL_DIR "/httpd_fail_%s", safe_ip);
+	unlink(path);
+}
 static auth_t auth_check(const char *authorization)
 {
 	const char *u, *p;
@@ -338,12 +417,17 @@ static auth_t auth_check(const char *authorization)
 	if (((p = nvram_get("http_passwd")) == NULL) || (*p == 0)) /* special case: empty password */
 		p = PASS_DEFAULT;
 
+	if (login_fail_check(client_addr))
+		return AUTH_BAD;
+
 	if (consttime_strcmp(authinfo, u) == 0 && consttime_strcmp(pass, p) == 0) {
+		login_fail_clear(client_addr);
 		return AUTH_OK;
 	}
 	else {
 		/* failed login msg to syslog */
 		logmsg(LOG_WARNING, "login '%s' failed (GUI) from %s:%d", authinfo, client_addr, http_port);
+		login_fail_record(client_addr);
 	}
 
 	return AUTH_BAD;
