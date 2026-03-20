@@ -289,6 +289,22 @@ static void get_client_addr(void)
 	inet_ntop(clientsai.ss_family, addr, client_addr, sizeof(client_addr));
 }
 
+
+/* Constant-time string comparison to prevent timing attacks on password checks.
+ * Returns 0 if equal, non-zero if different. Always takes the same time
+ * regardless of where strings differ. */
+static int consttime_strcmp(const char *a, const char *b)
+{
+	unsigned char result = 0;
+	size_t i, la = strlen(a), lb = strlen(b);
+	result |= (unsigned char)(la ^ lb);
+	for (i = 0; i < (la < lb ? lb : la); i++) {
+		unsigned char ca = (i < la) ? (unsigned char)a[i] : 0;
+		unsigned char cb = (i < lb) ? (unsigned char)b[i] : 0;
+		result |= ca ^ cb;
+	}
+	return (int)result;
+}
 static auth_t auth_check(const char *authorization)
 {
 	const char *u, *p;
@@ -322,7 +338,7 @@ static auth_t auth_check(const char *authorization)
 	if (((p = nvram_get("http_passwd")) == NULL) || (*p == 0)) /* special case: empty password */
 		p = PASS_DEFAULT;
 
-	if (strcmp(authinfo, u) == 0 && strcmp(pass, p) == 0) {
+	if (consttime_strcmp(authinfo, u) == 0 && consttime_strcmp(pass, p) == 0) {
 		return AUTH_OK;
 	}
 	else {
