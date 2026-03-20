@@ -11947,8 +11947,16 @@ int init_main(int argc, char *argv[])
 	start_jffs2();
 
 	/* set unique system id */
-	if (!f_exists("/etc/machine-id"))
-		system("echo $(nvram get lan_hwaddr) | md5sum | cut -b -32 > /etc/machine-id");
+	if (!f_exists("/etc/machine-id")) {
+		/* Generate machine-id from MAC address safely without shell interpolation.
+		 * Validate lan_hwaddr first to prevent command injection via shell metacharacters. */
+		const char *hwaddr = nvram_safe_get("lan_hwaddr");
+		if (!invalid_mac(hwaddr)) {
+			char cmd[128];
+			snprintf(cmd, sizeof(cmd), "echo '%s' | md5sum | cut -b -32 > /etc/machine-id", hwaddr);
+			system(cmd);
+		}
+	}
 
 	state = SIGUSR2; /* START */
 
