@@ -10,6 +10,7 @@
 
 
 #include "tomato.h"
+#include <ctype.h>
 
 #include <arpa/inet.h>
 #include <wlioctl.h>
@@ -23,6 +24,22 @@
 
 const char ovpnc_dir[]   = "/tmp/ovpnclientconfig";
 const char openssl_dir[] = "/tmp/openssl";
+
+/* Validate domain name contains only safe characters.
+ * Prevents command injection when wan_domain is interpolated into shell commands.
+ * Valid chars: alphanumeric, hyphen, dot. Max length 253 (RFC 1035).
+ */
+static int is_valid_domain(const char *s)
+{
+	const unsigned char *p;
+	int len = 0;
+	if (!s || *s == '\0') return 0;
+	for (p = (const unsigned char *)s; *p; ++p, ++len) {
+		if (len > 253) return 0;
+		if (!isalnum(*p) && *p != '.' && *p != '-') return 0;
+	}
+	return 1;
+}
 
 #ifdef TCONFIG_KEYGEN
 static void put_to_file(const char *filePath, const char *content)
@@ -75,7 +92,7 @@ static void prepareCAGeneration(const int serverNum, const int is_ecdh)
 		syslog(LOG_WARNING, "No CA KEY was saved for server %d, regenerating ...", serverNum);
 
 		memset(tmp, 0, sizeof(tmp));
-		if ((p = nvram_safe_get("wan_domain")) && (strcmp(p, "")))
+		if ((p = nvram_safe_get("wan_domain")) && (strcmp(p, "")) && is_valid_domain(p))
 			snprintf(tmp, sizeof(tmp), ".%s", p);
 
 		memset(buffer2, 0, sizeof(buffer2));
@@ -136,7 +153,7 @@ static void generateKey(const char *prefix, const int userid, const int is_ecdh)
 	snprintf(serial, sizeof(serial), "%d", userid);
 
 	memset(tmp, 0, sizeof(tmp));
-	if ((p = nvram_safe_get("wan_domain")) && (strcmp(p, "")))
+	if ((p = nvram_safe_get("wan_domain")) && (strcmp(p, "")) && is_valid_domain(p))
 		snprintf(tmp, sizeof(tmp), ".%s", p);
 
 	memset(subj_buf, 0, sizeof(subj_buf));
