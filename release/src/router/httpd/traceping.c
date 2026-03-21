@@ -7,13 +7,12 @@
  * https://freshtomato.org/
  *
  */
-
-
 #include "tomato.h"
-
 #include <ctype.h>
 
-
+/* Validate a hostname or IP address for use in shell commands.
+ * Allows alphanumeric, dot, hyphen, colon (IPv6), underscore (valid in hostnames).
+ * Returns 1 if valid, 0 if not. */
 static int check_addr(const char *addr, int max)
 {
 	const char *p;
@@ -25,27 +24,39 @@ static int check_addr(const char *addr, int max)
 	p = addr;
 	while (*p) {
 		c = *p;
-		if ((!isalnum(c)) && (c != '.') && (c != '-') && (c != ':'))
-			return 0; /* give IPv6 address a chance */
+		if ((!isalnum(c)) && (c != '.') && (c != '-') && (c != ':') && (c != '_'))
+			return 0;
 		++p;
 	}
+	return ((p - addr) <= max);
+}
 
-	return((p - addr) <= max);
+/* Clamp an integer value to [min, max] range.
+ * Used to sanitize user-supplied numeric parameters before passing to shell. */
+static int clamp_int(int val, int min, int max)
+{
+	if (val < min) return min;
+	if (val > max) return max;
+	return val;
 }
 
 void wo_trace(char *url)
 {
 	char cmd[256];
 	const char *addr;
+	int hops, wait;
 
 	addr = webcgi_get("addr");
 	if (!check_addr(addr, 64))
 		return;
 
-	killall("traceroute", SIGTERM);
+	/* clamp hops to [1, 30] and wait to [1, 10] seconds */
+	hops = clamp_int(atoi(webcgi_safeget("hops", "1")), 1, 30);
+	wait = clamp_int(atoi(webcgi_safeget("wait", "1")), 1, 10);
 
+	killall("traceroute", SIGTERM);
 	web_puts("\ntracedata = '");
-	snprintf(cmd, sizeof(cmd), "traceroute -I -m %u -w %u %s", atoi(webcgi_safeget("hops", "0")), atoi(webcgi_safeget("wait", "0")), addr);
+	snprintf(cmd, sizeof(cmd), "traceroute -I -m %d -w %d %s", hops, wait, addr);
 	web_pipecmd(cmd, WOF_JAVASCRIPT);
 	web_puts("';");
 }
@@ -54,62 +65,19 @@ void wo_ping(char *url)
 {
 	char cmd[256];
 	const char *addr;
+	int count, size;
 
 	addr = webcgi_get("addr");
 	if (!check_addr(addr, 64))
 		return;
 
-	killall("ping", SIGTERM);
+	/* clamp count to [1, 50] and size to [1, 1472] bytes (max non-fragmented) */
+	count = clamp_int(atoi(webcgi_safeget("count", "1")), 1, 50);
+	size  = clamp_int(atoi(webcgi_safeget("size",  "56")), 1, 1472);
 
+	killall("ping", SIGTERM);
 	web_puts("\npingdata = '");
-	snprintf(cmd, sizeof(cmd), "ping -c %d -s %d %s", atoi(webcgi_safeget("count", "0")), atoi(webcgi_safeget("size", "0")), addr);
+	snprintf(cmd, sizeof(cmd), "ping -c %d -s %d %s", count, size, addr);
 	web_pipecmd(cmd, WOF_JAVASCRIPT);
 	web_puts("';");
 }
-
-#if 0
-#include <regex.h>
-
-int main(int argc, char **argv)
-{
-	FILE *f;
-	char s[1024];
-	int n;
-	char domain[512];
-	char ip[32];
-	char min[32];
-	regex_t re;
-	regmatch_t rm[10];
-	int i;
-
-	if ((f = popen("traceroute -I 192.168.0.1", "r")) == NULL) {
-		logerr(__FUNCTION__, __LINE__, "popen");
-		return 1;
-	}
-// 2  192.168.0.1 (192.168.0.1)  1.908 ms  1.812 ms  1.688 ms
-
-	while (fgets(s, sizeof(s), f)) {
-		//
-		if (regcomp(&re, "^ +[0-9]+ +(.+?) +\\((.+?)\\) +(.+?) ms +(.+?) ms +(.+?) ms", REG_EXTENDED) != 0) {
-			printf("error: regcomp\n");
-			return 1;
-		}
-		if ((regexec(&re, s, sizeof(rm) / sizeof(rm[0]), rm, 0) == 0) && (re.re_nsub == 5)) {
-			printf("[");
-			for (i = 1; i < 6; ++i) {
-				s[rm[i].rm_eo] = 0;
-				printf("'%s'%c", s + rm[i].rm_so, (i == 5) ? ' ' : ',');
-			}
-			printf("]\n");
-//			printf("%d = %d = [%s]\n", i, rm[i].rm_so, s + rm[i].rm_so);
-		}
-		regfree(&re);
-
-//		sscanf(s, "%d %s (%s) %s ms", &n, domain, ip, min);
-//		printf("[%s] %s %s\n", ip, domain, min);
-	}
-	pclose(f);
-
-	return 0;
-}
-#endif /* 0 */
