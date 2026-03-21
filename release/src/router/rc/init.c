@@ -4871,9 +4871,11 @@ static int init_nvram(void)
 			nvram_set("wl0_channel", "6");
 			nvram_set("wl0_nctrlsb", "lower");
 			nvram_set("wl1_channel", "36");
-			nvram_set("wl1_nbw","40");
-			nvram_set("wl1_nbw_cap", "1");
-			nvram_set("wl1_nctrlsb", "lower");
+			/* Default to 20MHz on 5GHz for wl_high USB radio stability.
+			 * 40MHz causes frequent crashes under load (issue #3). */
+			nvram_set("wl1_nbw", "20");
+			nvram_set("wl1_nbw_cap", "0");
+			nvram_set("wl1_nctrlsb", "none");
 		}
 
 		/* WNDR3400v3 adjust default values for wl_txq_thresh, et_txq_thresh and wl_rpcq_rxthresh (--> explicitly for WiFi modules) */
@@ -11947,8 +11949,16 @@ int init_main(int argc, char *argv[])
 	start_jffs2();
 
 	/* set unique system id */
-	if (!f_exists("/etc/machine-id"))
-		system("echo $(nvram get lan_hwaddr) | md5sum | cut -b -32 > /etc/machine-id");
+	if (!f_exists("/etc/machine-id")) {
+		/* Generate machine-id from MAC address safely without shell interpolation.
+		 * Validate lan_hwaddr first to prevent command injection via shell metacharacters. */
+		const char *hwaddr = nvram_safe_get("lan_hwaddr");
+		if (!invalid_mac(hwaddr)) {
+			char cmd[128];
+			snprintf(cmd, sizeof(cmd), "echo '%s' | md5sum | cut -b -32 > /etc/machine-id", hwaddr);
+			system(cmd);
+		}
+	}
 
 	state = SIGUSR2; /* START */
 

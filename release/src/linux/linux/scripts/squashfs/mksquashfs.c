@@ -1518,6 +1518,9 @@ void scan2_freedir(struct directory *dir)
 }
 
 
+/* Forward declaration to fix implicit function declaration error with GCC 14+ */
+int dir_scan2(squashfs_inode *inode, struct dir_info *dir_info);
+
 void dir_scan(squashfs_inode *inode, char *pathname, int (_readdir)(char *, char *, struct dir_info *))
 {
 	struct dir_info *dir_info = dir_scan1(pathname, _readdir);

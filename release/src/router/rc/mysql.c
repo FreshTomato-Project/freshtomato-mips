@@ -11,6 +11,42 @@
 
 #include "rc.h"
 
+/* Escape single quotes in a string for safe use in SQL statements.
+ * Replaces each ' with '' as per SQL standard escaping.
+ * Returns number of chars written. dst must be at least 2*src_len+1 bytes. */
+static size_t mysql_escape_string(char *dst, size_t dst_len, const char *src)
+{
+	size_t i = 0, j = 0;
+	if (!src || !dst || dst_len == 0) return 0;
+	while (src[i] && j + 2 < dst_len) {
+		if (src[i] == '\'') {
+			dst[j++] = '\'';
+			dst[j++] = '\'';
+		} else if (src[i] == '\\') {
+			dst[j++] = '\\';
+			dst[j++] = '\\';
+		} else {
+			dst[j++] = src[i];
+		}
+		i++;
+	}
+	dst[j] = '\0';
+	return j;
+}
+
+/* Validate mysql password contains no shell metacharacters.
+ * Allows printable ASCII except: $ \ \` " ' ; & | < > ( ) { } */
+static int mysql_passwd_is_safe(const char *s)
+{
+	const char *unsafe = "$\\\`\";';<>|&(){}";
+	if (!s) return 0;
+	for (; *s; s++) {
+		if (!isprint((unsigned char)*s)) return 0;
+		if (strchr(unsafe, *s)) return 0;
+	}
+	return 1;
+}
+
 #define mysql_etc_dir		"/etc/mysql"
 #define mysql_conf_link		"/etc/my.cnf"
 #define mysql_conf		mysql_etc_dir"/my.cnf"
@@ -302,7 +338,11 @@ void start_mysql(int force)
 		f_write_string(mysql_passwd, "use mysql;", FW_CREATE | FW_NEWLINE, 0644);
 
 		memset(tmp1, 0, sizeof(tmp1));
-		snprintf(tmp1, sizeof(tmp1), "update user set password=password('%s') where user='root';", nvram_safe_get("mysql_passwd"));
+		{
+				char escaped_passwd[256];
+				mysql_escape_string(escaped_passwd, sizeof(escaped_passwd), nvram_safe_get("mysql_passwd"));
+				snprintf(tmp1, sizeof(tmp1), "update user set password=password('%s') where user='root';", escaped_passwd);
+			}
 		f_write_string(mysql_passwd, tmp1, FW_APPEND | FW_NEWLINE, 0);
 
 		f_write_string(mysql_passwd, "flush privileges;", FW_APPEND | FW_NEWLINE, 0);
@@ -317,7 +357,10 @@ void start_mysql(int force)
 
 		f_write_string(mysql_log, "=========mysqldadmin shutdown====================", FW_APPEND | FW_NEWLINE, 0);
 		memset(tmp1, 0, sizeof(tmp1));
-		snprintf(tmp1, sizeof(tmp1), "%s/mysqladmin -uroot -p\"%s\" --shutdown_timeout=3 shutdown >> %s 2>&1", pbi, nvram_safe_get("mysql_passwd"), mysql_log);
+		if (mysql_passwd_is_safe(nvram_safe_get("mysql_passwd")))
+				snprintf(tmp1, sizeof(tmp1), "%s/mysqladmin -uroot -p\"%s\" --shutdown_timeout=3 shutdown >> %s 2>&1", pbi, nvram_safe_get("mysql_passwd"), mysql_log);
+			else
+				snprintf(tmp1, sizeof(tmp1), "%s/mysqladmin -uroot --shutdown_timeout=3 shutdown >> %s 2>&1", pbi, mysql_log);
 		system(tmp1);
 
 		killall_tk_period_wait("mysqld", 50);
