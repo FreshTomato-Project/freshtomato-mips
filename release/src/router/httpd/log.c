@@ -8,7 +8,6 @@
  *
  */
 
-
 #include "tomato.h"
 
 #include <ctype.h>
@@ -17,28 +16,19 @@
 #include <netdb.h>
 
 /* Max number of log lines for GUI to display */
-#define MAX_LOG_LINES		4000
+#define MAX_LOG_LINES           4000
 
 /* Size of each input chunk to be read and allocate for. */
 #ifndef READALL_CHUNK
-#define READALL_CHUNK		262144
+#define READALL_CHUNK           262144
 #endif
 
-#define READALL_OK		 0	/* Success */
-#define READALL_INVALID		-1	/* Invalid parameters */
-#define READALL_ERROR		-2	/* Stream error */
-#define READALL_TOOMUCH		-3	/* Too much input */
-#define READALL_NOMEM		-4	/* Out of memory */
+#define READALL_OK               0      /* Success */
+#define READALL_INVALID         -1      /* Invalid parameters */
+#define READALL_ERROR           -2      /* Stream error */
+#define READALL_TOOMUCH         -3      /* Too much input */
+#define READALL_NOMEM           -4      /* Out of memory */
 
-
-/* This function returns one of the READALL_ constants above.
-   If the return value is zero == READALL_OK, then:
-     (*dataptr) points to a dynamically allocated buffer, with
-     (*sizeptr) chars read from the file.
-     The buffer is allocated for one extra char, which is NUL,
-     and automatically appended after the data.
-   Initial values of (*dataptr) and (*sizeptr) are ignored.
- */
 static int readall(FILE *in, char **dataptr, size_t *sizeptr)
 {
 	size_t n;
@@ -46,11 +36,9 @@ static int readall(FILE *in, char **dataptr, size_t *sizeptr)
 	size_t used = 0;
 	char *data  = NULL, *temp;
 
-	/* None of the parameters can be NULL. */
 	if ((in == NULL) || (dataptr == NULL) || (sizeptr == NULL))
 		return READALL_INVALID;
 
-	/* A read error already occurred? */
 	if (ferror(in))
 		return READALL_ERROR;
 
@@ -58,7 +46,6 @@ static int readall(FILE *in, char **dataptr, size_t *sizeptr)
 		if ((used + READALL_CHUNK + 1) > size) {
 			size = used + READALL_CHUNK + 1;
 
-			/* Overflow check. Some ANSI C compilers may optimize this away, though. */
 			if (size <= used) {
 				free(data);
 				return READALL_TOOMUCH;
@@ -109,7 +96,6 @@ static int logok(void)
 	return 0;
 }
 
-/* Figure out & return the logfile name. */
 static void get_logfilename(char *lfn, size_t buf_sz)
 {
 	char cfg[256];
@@ -120,12 +106,11 @@ static void get_logfilename(char *lfn, size_t buf_sz)
 		if ((p = strchr(cfg, '\n')))
 			*p = 0;
 
-		strtok(cfg, " \t");	/* skip rotsize */
-		strtok(NULL, " \t");	/* skip backup cnt */
+		strtok(cfg, " \t");
+		strtok(NULL, " \t");
 		if ((p = strtok(NULL, " \t")) && (*p == '/')) {
-			/* check if we can write to the file */
 			if (f_write(p, cfg, 0, FW_APPEND, 0) >= 0) {
-				nv = p;	/* nv is the configured log filename */
+				nv = p;
 			}
 		}
 	}
@@ -133,11 +118,31 @@ static void get_logfilename(char *lfn, size_t buf_sz)
 		strlcpy(lfn, nv, buf_sz);
 }
 
+/* Validate a log filter string contains only safe printable characters.
+ * Rejects shell metacharacters to prevent injection via the grep command.
+ * Returns 1 if safe, 0 if not. */
+static int filter_is_safe(const char *s)
+{
+	static const char *unsafe = "<>|\"\\`$;!&(){}*?~#";
+
+	if (!s || strlen(s) > 64)
+		return 0;
+
+	for (; *s; s++) {
+		if (!isprint((unsigned char)*s))
+			return 0;
+		if (strchr(unsafe, *s))
+			return 0;
+	}
+	return 1;
+}
+
 void wo_viewlog(char *url)
 {
-	char lfn[256], s[128], t[128];
-	char *p, *c, *w;
+	char lfn[256], s[256];
+	char *w;
 	int logLines;
+	const char *find;
 
 	if (!logok())
 		return;
@@ -147,52 +152,39 @@ void wo_viewlog(char *url)
 	if ((w = webcgi_get("which")) == NULL)
 		return;
 
+	/* parse and clamp logLines - compute atoi once */
 	if (strcmp(w, "all") == 0)
 		logLines = MAX_LOG_LINES;
-	else if ((logLines = atoi(w)) <= 0)
-		return;
-	else if ((logLines = atoi(w)) > MAX_LOG_LINES)
-		logLines = MAX_LOG_LINES;
+	else {
+		logLines = atoi(w);
+		if (logLines <= 0)
+			return;
+		if (logLines > MAX_LOG_LINES)
+			logLines = MAX_LOG_LINES;
+	}
 
 	send_header(200, NULL, mime_plain, 0);
 
-	/* show filtered */
-	if ((p = webcgi_get("find")) != NULL) {
-			if (strlen(p) > 64)
-				return;
+	find = webcgi_get("find");
+	if (find != NULL) {
+		/* validate filter string before passing to shell.
+		 * Use fgrep -F (fixed string, no regex) to prevent regex injection. */
+		if (!filter_is_safe(find))
+			return;
 
-			c = t;
-			while (*p) {
-					switch (*p) {
-					case '<':
-					case '>':
-					case '|':
-					case '"':
-					case '\\':
-					case '`':
-						*c++ = '\\';
-						*c++ = *p;
-						break;
-					default:
-						if (isprint(*p))
-							*c++ = *p;
-						break;
-					}
-					++p;
-			}
-			*c = 0;
-			snprintf(s, sizeof(s), "grep -ih \"%s\" $(ls -1rv %s %s.* 2>/dev/null) 2>/dev/null | tail -n %d", t, lfn, lfn, logLines);
+		snprintf(s, sizeof(s), "fgrep -ih -F \"%s\" $(ls -1rv %s %s.* 2>/dev/null) 2>/dev/null | tail -n %d",
+		         find, lfn, lfn, logLines);
 	}
-	/* show all */
-	else
+	else {
 		snprintf(s, sizeof(s), "cat $(ls -1rv %s %s.* 2>/dev/null) | tail -n %d", lfn, lfn, logLines);
+	}
 
 	web_pipecmd(s, WOF_NONE);
 }
 
 void asp_showsyslog(int argc, char **argv)
 {
-	char lfn[256], s[128];
+	char lfn[256], s[256];
 	int logLines = MAX_LOG_LINES;
 
 	if (!logok())
@@ -201,13 +193,14 @@ void asp_showsyslog(int argc, char **argv)
 	get_logfilename(lfn, sizeof(lfn));
 
 	if (argc > 1) {
-		if ((logLines = atoi(argv[1])) <= 0)
+		logLines = atoi(argv[1]);
+		if (logLines <= 0)
 			return;
-		else if ((logLines = atoi(argv[1])) > MAX_LOG_LINES)
+		if (logLines > MAX_LOG_LINES)
 			logLines = MAX_LOG_LINES;
 	}
 
-	asp_time(0, 0); /* get current time and print in the first line */
+	asp_time(0, 0);
 	web_puts("\n");
 
 	snprintf(s, sizeof(s), "cat $(ls -1rv %s %s.* 2>/dev/null) | tail -n %d", lfn, lfn, logLines);
@@ -241,15 +234,23 @@ static void webmon_list(char *name, int webmon, unsigned int maxcount)
 						length = current_end - line_start;
 
 						line = malloc(length + 1);
+						if (!line)
+							break;
+
 						strlcpy(line, line_start, length + 1);
 						line[length] = '\0';
 
-						if (sscanf(line, "%lu\t%s\t%s", &time, ip, val) != 3)
+						if (sscanf(line, "%lu\t%63s\t%255s", &time, ip, val) != 3) {
+							free(line); /* fix: was leaked on continue */
+							current_end = lineStart;
 							continue;
+						}
 
+						/* escape both ip and val for safe JS output */
 						js = utf8_to_js_string(val);
-
-						web_printf("%c['%lu','%s','%s']", comma, time, ip, (js ? : ""));
+						web_printf("%c['%lu','", comma, time);
+						web_putj(ip); /* ip was previously unescaped in JS */
+						web_printf("','%s']", (js ? js : ""));
 
 						free(js);
 						free(line);
@@ -261,6 +262,7 @@ static void webmon_list(char *name, int webmon, unsigned int maxcount)
 							break;
 					}
 				}
+				free(data);
 			}
 			fclose(f);
 		}
@@ -279,7 +281,10 @@ void asp_webmon(int argc, char **argv)
 
 void wo_webmon(char *url)
 {
-	nvram_set("log_wmclear", webcgi_get("clear"));
+	const char *clear = webcgi_get("clear");
+
+	/* webcgi_get may return NULL; nvram_set requires a valid string */
+	nvram_set("log_wmclear", clear ? clear : "");
 	exec_service("firewall-restart");
 	nvram_unset("log_wmclear");
 }
@@ -297,13 +302,20 @@ static int webmon_ok(int searches)
 
 void wo_syslog(char *url)
 {
-	char lfn[256], s[128], file[64];
+	char lfn[256], s[256], file[64];
+	const char *suffix;
 
 	get_logfilename(lfn, sizeof(lfn));
 
 	if (strncmp(url, "webmon_", 7) == 0) {
-		/* web monitor */
-		memset(file, 0, sizeof(file));
+		/* Validate the url suffix contains only safe characters to prevent
+		 * path traversal via e.g. "webmon_../sensitive_file" */
+		suffix = url + 7;
+		if (strspn(suffix, "abcdefghijklmnopqrstuvwxyz_") != strlen(suffix)) {
+			send_error(400, NULL, NULL);
+			return;
+		}
+
 		snprintf(file, sizeof(file), "/proc/%s", url);
 		if (!webmon_ok(strstr(url, "searches") != NULL))
 			return;
@@ -312,12 +324,10 @@ void wo_syslog(char *url)
 		do_file(file);
 	}
 	else {
-		/* syslog */
 		if (!logok())
 			return;
 
 		send_header(200, NULL, mime_binary, 0);
-		memset(s, 0, sizeof(s));
 		snprintf(s, sizeof(s), "cat $(ls -1rv %s %s.* 2>/dev/null)", lfn, lfn);
 		web_pipecmd(s, WOF_NONE);
 	}
