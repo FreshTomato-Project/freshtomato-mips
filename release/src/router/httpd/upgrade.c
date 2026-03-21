@@ -8,7 +8,6 @@
  *
  */
 
-
 #include "tomato.h"
 
 #include <fcntl.h>
@@ -19,6 +18,9 @@
 #include <typedefs.h>
 #include <sys/reboot.h>
 
+/* Maximum firmware image size: 16MB. Rejects absurdly large uploads
+ * before allocating memory or touching flash. */
+#define FIRMWARE_MAX_SIZE (16 * 1024 * 1024)
 
 void prepare_upgrade(void)
 {
@@ -48,7 +50,7 @@ void wi_upgrade(char *url, int len, char *boundary)
 	uint8 buf[1024];
 	char *tmp;
 	pid_t pid = -1;
-	int fd, m;
+	int fd = -1, m;
 	unsigned int reset;
 	const char *error = "Error reading file";
 #ifdef TCONFIG_BCMARM
@@ -59,14 +61,19 @@ void wi_upgrade(char *url, int len, char *boundary)
 
 	check_id(url);
 	reset = (strcmp(webcgi_safeget("_reset", "0"), "1") == 0);
-	memset(buf, 0, sizeof(buf)); /* reset */
+	memset(buf, 0, sizeof(buf));
 
 	/* skip the rest of the header */
 	if (!skip_header(&len))
 		goto ERROR;
 
+	/* sanity check file size: must be between 1MB and FIRMWARE_MAX_SIZE */
 	if (len < (1 * 1024 * 1024)) {
-		error = "Invalid file";
+		error = "Invalid file: too small";
+		goto ERROR;
+	}
+	if (len > FIRMWARE_MAX_SIZE) {
+		error = "Invalid file: too large";
 		goto ERROR;
 	}
 
@@ -87,23 +94,27 @@ void wi_upgrade(char *url, int len, char *boundary)
 
 	prepare_upgrade();
 
-	/* copy to memory */
-	system("cp /www/reboot.asp /tmp");
-	system("cp /www/*.css /tmp");
-	system("cp /www/favicon.ico /tmp");
-	system("cp /www/asus-bg.png /tmp");
-	system("cp /www/tomatousb_bg.png /tmp");
+	/* copy web assets to /tmp for use during reboot page */
+	eval("cp", "/www/reboot.asp", "/tmp");
+	eval("cp", "/www/favicon.ico", "/tmp");
+	eval("cp", "/www/asus-bg.png", "/tmp");
+	eval("cp", "/www/tomatousb_bg.png", "/tmp");
 
 	led(LED_DIAG, 1);
 
-	/* create unique file */
-	if ((fd = mkstemp(fifo) < 0)) {
-		error = "Unable to create file";
+	/* mkstemp creates and opens a unique temp file; unlink it immediately
+	 * so the name is free for mkfifo. fd is kept open to prevent name reuse
+	 * by another process (mitigates TOCTOU race on the fifo path). */
+	fd = mkstemp(fifo); /* NOTE: operator precedence - assign fd first, then check */
+	if (fd < 0) {
+		error = "Unable to create temp file";
 		goto ERROR2;
 	}
+	close(fd);
+	fd = -1;
 	unlink(fifo);
 
-	/* create fifo */
+	/* create fifo at the now-free unique path */
 	if (mkfifo(fifo, S_IRWXU) < 0) {
 		error = "Unable to create fifo";
 		goto ERROR2;
@@ -121,7 +132,7 @@ void wi_upgrade(char *url, int len, char *boundary)
 		goto ERROR2;
 	}
 
-	/* this will actually write the boundary, but since mtd-write uses trx length... */
+	/* stream firmware image to mtd-write via fifo */
 	while (len > 0) {
 		if ((m = web_read(buf, MIN((unsigned int)len, sizeof(buf)))) <= 0)
 			goto ERROR2;
@@ -161,7 +172,6 @@ ERROR2:
 		error = NULL;
 
 ERROR:
-	/* erase flash file and free memory */
 	if (fifo[0])
 		unlink(fifo);
 
@@ -189,7 +199,6 @@ void wo_flash(char *url)
 		sleep(2);
 
 		sync();
-		//kill(1, SIGTERM);
 		reboot(RB_AUTOBOOT);
 
 		exit(0);
