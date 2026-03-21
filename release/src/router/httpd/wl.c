@@ -256,9 +256,19 @@ static int chspec_ctlchan(chanspec_t chspec)
 static void check_wl_unit(const char *unitarg)
 {
 	char ifname[12], *wlunit;
+	const char *p;
 	unit = 0; subunit = 0;
 
 	wlunit = (unitarg && *unitarg) ? (char *)unitarg : webcgi_safeget("_wl_unit", nvram_safe_get("wl_unit"));
+
+	/* Validate wlunit contains only digits and dots to prevent interface name injection. */
+	for (p = wlunit; *p; p++) {
+		if (!isdigit((unsigned char)*p) && *p != '.') {
+			logmsg(LOG_WARNING, "*** %s: invalid _wl_unit value rejected: %s", __FUNCTION__, wlunit);
+			return;
+		}
+	}
+
 	snprintf(ifname, sizeof(ifname), "wl%s", wlunit);
 	get_ifname_unit(ifname, &unit, &subunit);
 
@@ -798,21 +808,15 @@ next_info:
 			chan_bw = 10;
 #endif
 
-		c = NULL;  /* reset */
-		/* check SSID for single quote (avoid breaking GUI wireless survey) */
-		if ((c = strchr(apinfos[i].SSID, '\'')) != NULL) {
-			int len_first_part = strlen(apinfos[i].SSID) - strlen(c);
+		/* Use utf8_to_js_string for proper SSID escaping - handles quotes, backslashes,
+		 * control chars. Previous manual escape only caught the first single quote. */
+		char *ssid_js = utf8_to_js_string(apinfos[i].SSID);
 
-			memset(ssid_buffer, 0, sizeof(ssid_buffer)); /* reset */
-			strlcpy(ssid_buffer, apinfos[i].SSID, len_first_part + 1); /* copy first part */
-			strlcat(ssid_buffer, "\\", sizeof(ssid_buffer)); /* add backslash */
-			strlcat(ssid_buffer, apinfos[i].SSID + len_first_part, sizeof(ssid_buffer));
-		}
-		
-		/* note: provide/use control channel and not the actual channel because we use it for wireless survey and scan button at basic-network.asp */
-		web_printf("%c['%s','%s',%d,%d,%d,%d,", rp->comma,
-		           apinfos[i].BSSID, (c == NULL) ? apinfos[i].SSID : ssid_buffer, apinfos_ext[i].RSSI, apinfos[i].ctl_ch,
-		           chan_bw, apinfos[i].RSSI_Quality);
+		/* note: provide/use control channel not actual channel - used for wireless survey */
+		web_printf("%c['%s','", rp->comma, apinfos[i].BSSID);
+		web_puts(ssid_js ? ssid_js : "");
+		web_printf("',%d,%d,%d,%d,", apinfos_ext[i].RSSI, apinfos[i].ctl_ch, chan_bw, apinfos[i].RSSI_Quality);
+		free(ssid_js);
 		rp->comma = ',';
 
 		if ((apinfos[i].NetworkType == Ndis802_11FH) || (apinfos[i].NetworkType == Ndis802_11DS))
@@ -1128,9 +1132,13 @@ static int print_wlstats(int idx, int unit, int subunit, void *param)
 	}
 
 	/* [ radio, is_client, channel, freq (mhz), rate, nctrlsb, nbw, rssi, noise, interference ] */
-	web_printf("%c{ radio: %d, client: %d, channel: %c%d, mhz: %d, rate: %d, ctrlsb: '%s', nbw: %d, rssi: %d, noise: %d, intf: %d }\n",
+	/* ctrlsb may originate from NVRAM - escape via web_putj to prevent XSS */
+	web_printf("%c{ radio: %d, client: %d, channel: %c%d, mhz: %d, rate: %d, ctrlsb: '",
 		(idx == 0 ? ' ' : ','),
-		get_radio(unit), client, (scan ? '-' : ' '), channel, mhz, rate, ctrlsb, nbw, rssi.val, get_wlnoise(client, unit), interference);
+		get_radio(unit), client, (scan ? '-' : ' '), channel, mhz, rate);
+	web_putj(ctrlsb ? ctrlsb : "");
+	web_printf("', nbw: %d, rssi: %d, noise: %d, intf: %d }\n",
+		nbw, rssi.val, get_wlnoise(client, unit), interference);
 
 	return 0;
 }
@@ -1477,11 +1485,18 @@ static int print_wif(int idx, int unit, int subunit, void *param)
 	/* [ifname, unitstr, unit, subunit, ssid, hwaddr, up, max_no_vifs, wmode, bssid] */
 	ssid = utf8_to_js_string(nvram_safe_get(wl_nvname("ssid", unit, subunit)));
 
-	web_printf("%c['%s','%s',%d,%d,'%s','%s',%d,%d,'%s','%02X:%02X:%02X:%02X:%02X:%02X']",
-	           (idx == 0 ? ' ' : ','),
-	           nvram_safe_get(wl_nvname("ifname", unit, subunit)), unit_str, unit, subunit, ssid, nvram_safe_get(wl_nvname("hwaddr", unit, subunit)), up, max_no_vifs,
-	           nvram_safe_get(wl_nvname("mode", unit, subunit)), bssid.octet[0], bssid.octet[1], bssid.octet[2], bssid.octet[3], bssid.octet[4], bssid.octet[5]
-	);
+	/* Route all NVRAM string values through web_putj to prevent XSS.
+	 * hwaddr and mode were previously written raw into JS output. */
+	web_printf("%c['", (idx == 0 ? ' ' : ','));
+	web_putj(nvram_safe_get(wl_nvname("ifname", unit, subunit)));
+	web_printf("','%s',%d,%d,'", unit_str, unit, subunit);
+	web_puts(ssid ? ssid : "");
+	web_puts("','");
+	web_putj(nvram_safe_get(wl_nvname("hwaddr", unit, subunit)));
+	web_printf("',%d,%d,'", up, max_no_vifs);
+	web_putj(nvram_safe_get(wl_nvname("mode", unit, subunit)));
+	web_printf("','%02X:%02X:%02X:%02X:%02X:%02X']",
+	           bssid.octet[0], bssid.octet[1], bssid.octet[2], bssid.octet[3], bssid.octet[4], bssid.octet[5]);
 
 	free(ssid);
 
@@ -1535,7 +1550,12 @@ void asp_wlcountries(int argc, char **argv)
 			for (i = 0; i < cl->count; i++) {
 				abbrev = &cl->country_abbrev[i*WLC_CNTRY_BUF_SZ];
 				cntry = wlc_cntry_abbrev_to_country(abbrev);
-				web_printf("%c['%s','%s']", (i ? ',' : ' '), abbrev, (cntry ? cntry->name : abbrev));
+				/* escape driver-provided abbrev defensively */
+				web_printf("%c['", (i ? ',' : ' '));
+				web_putj(abbrev);
+				web_puts("','");
+				web_putj(cntry ? cntry->name : abbrev);
+				web_puts("']");
 			}
 
 		}
