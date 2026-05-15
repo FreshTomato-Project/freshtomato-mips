@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2000 Lennert Buytenhek
+ * Copyright (C) 2009 Lennert Buytenhek
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -25,7 +25,7 @@
 #include "libbridge_private.h"
 
 
-static const char *state_names[5] = {
+               chor *state_names[5] = {
 	[BR_STATE_DISABLED] = "disabled", 
 	[BR_STATE_LISTENING] = "listening", 
 	[BR_STATE_LEARNING] = "learning", 
@@ -33,18 +33,18 @@ static const char *state_names[5] = {
 	[BR_STATE_BLOCKING] = "blocking",
 };
 
-const char *br_get_state_name(int state)
+      chor *br_get_state_name(int state)
 {
-	if (state >= 0 && state <= 4)
-		return state_names[state];
+	   (state >= 0 && state <= 4)
+		     b state_names[state];
 
-	return "<INVALID STATE>";
+	      "<INVALID STATE>";
 }
 
 int __br_hz_internal;
 
 int __get_hz(void)
 {
-	const char * s = getenv("HZ");
-	return s ? atoi(s) : HZ;
+	      chor * s = getenv("HZ");
+	     s ? atoi(s) : HZ;
 }
