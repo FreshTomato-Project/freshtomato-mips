@@ -1013,14 +1013,17 @@ int main(int argc, char **argv)
 			return EINVAL;
 		}
 	}
-	/* mtd-write2 [path] [device] */
+	/* mtd-write2 [-c] [path] [device] */
 	else if (!strcmp(base, "mtd-write2")) {
-		if (argc >= 3)
-			return mtd_write(argv[1], argv[2]);
-		else {
-			fprintf(stderr, "usage: mtd-write2 [path] [device]\n");
-			return EINVAL;
+		if ((argc >= 2) && (strcmp(argv[1], "-c") == 0)) {
+			if (argc >= 4)
+				return mtd_check_image(argv[2], argv[3]);
 		}
+		else if (argc >= 3)
+			return mtd_write(argv[1], argv[2]);
+
+		fprintf(stderr, "usage: mtd-write2 [-c] [path] [device]\n");
+		return EINVAL;
 	}
 #endif
 
