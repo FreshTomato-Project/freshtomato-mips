@@ -256,7 +256,7 @@
  	       }
 --- dnsmasq/src/cache.c
 +++ dnsmasq/src/cache.c
-@@ -608,8 +608,11 @@
+@@ -630,8 +630,11 @@
    else
      {
        int i;
@@ -269,7 +269,7 @@
        for (i = 0; i < hash_size; i++)
  	for (crecp = hash_table[i], up = &hash_table[i]; 
  	     crecp && ((crecp->flags & F_REVERSE) || !(crecp->flags & F_IMMORTAL));
-@@ -725,9 +728,11 @@
+@@ -747,9 +750,11 @@
  	  if ((flags & F_IPV4) && (new->flags & F_IPV4) &&
  	      new->addr.addr4.s_addr == addr->addr4.s_addr)
  	    return new;
@@ -281,7 +281,7 @@
  	}
  
        insert_error = 1;
-@@ -1262,7 +1267,11 @@
+@@ -1284,7 +1289,11 @@
  				time_t now, unsigned int prot)
  {
    struct crec *ans;
@@ -293,7 +293,7 @@
    
    if (crecp) /* iterating */
      ans = crecp->next;
-@@ -1458,12 +1467,14 @@
+@@ -1480,12 +1489,14 @@
  	  addrlen = INADDRSZ;
  	  domain_suffix = get_domain(addr.addr4);
  	}
@@ -308,7 +308,7 @@
        else
  	{
  	  my_syslog(LOG_ERR, _("bad address at %s line %d"), filename, lineno); 
-@@ -1656,6 +1667,7 @@
+@@ -1678,6 +1689,7 @@
  	    add_hosts_entry(cache, (union all_addr *)&hr->addr, INADDRSZ, SRC_CONFIG, (struct crec **)daemon->packet, revhashsz);
  	  }
  
@@ -316,7 +316,7 @@
  	if ((hr->flags & HR_6) &&
  	    (cache = get_config_crec()))
  	  {
-@@ -1664,6 +1676,7 @@
+@@ -1686,6 +1698,7 @@
  	    cache->flags = F_HOSTS | F_IMMORTAL | F_FORWARD | F_REVERSE | F_IPV6 | F_NAMEP | F_CONFIG;
  	    add_hosts_entry(cache, (union all_addr *)&hr->addr6, IN6ADDRSZ, SRC_CONFIG, (struct crec **)daemon->packet, revhashsz);
  	  }
@@ -324,7 +324,7 @@
        }
  	
    if (option_bool(OPT_NO_HOSTS) && !daemon->addn_hosts)
-@@ -1763,11 +1776,13 @@
+@@ -1785,11 +1798,13 @@
    int in_hosts = 0;
    size_t addrlen = sizeof(struct in_addr);
  
@@ -338,7 +338,7 @@
    
    inet_ntop(prot, host_address, daemon->addrbuff, ADDRSTRLEN);
    
-@@ -2088,8 +2103,10 @@
+@@ -2110,8 +2125,10 @@
        a = daemon->addrbuff;
        if (cache->flags & F_IPV4)
  	inet_ntop(AF_INET, &cache->addr, a, ADDRSTRLEN);
@@ -459,7 +459,7 @@
  	/* At the end */
 --- dnsmasq/src/dnsmasq.c
 +++ dnsmasq/src/dnsmasq.c
-@@ -2130,9 +2130,11 @@
+@@ -2143,9 +2143,11 @@
  
  	  got_index = 1;
  	  
@@ -566,7 +566,7 @@
  #endif
 --- dnsmasq/src/dnssec.c
 +++ dnsmasq/src/dnssec.c
-@@ -1030,7 +1030,11 @@
+@@ -1037,7 +1037,11 @@
  	    {
  	      if (option_bool(OPT_BOGUSPRIV) &&
  		  (flags = in_arpa_name_2_addr(name, &a)) &&
