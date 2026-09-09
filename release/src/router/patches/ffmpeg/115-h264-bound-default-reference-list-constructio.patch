@@ -1,0 +1,76 @@
+From 83ead6dd47211c7c4cf4e216a0afa66a5bc99a6e Mon Sep 17 00:00:00 2001
+From: pedro311 <pedro311@gmail.com>
+Date: Tue, 8 Sep 2026 11:03:33 +0000
+Subject: [PATCH] bound default reference-list construction
+
+Pass the destination capacity into build_def_list() and stop adding
+references when the list is full. The old code asserted the size only after
+writing, allowing malformed reference state to write beyond default_ref_list.
+
+Upstream-Commit: e0d8a17402b934b8fba7b86c6c990abf1257901b
+Security-Fix: out-of-bounds-write
+---
+ ffmpeg/libavcodec/h264_refs.c | 26 ++++++++++++++++----------
+ 1 file changed, 16 insertions(+), 10 deletions(-)
+
+diff --git ffmpeg/libavcodec/h264_refs.c ffmpeg/libavcodec/h264_refs.c
+index a12647d..d651b7d 100644
+--- ffmpeg/libavcodec/h264_refs.c
++++ ffmpeg/libavcodec/h264_refs.c
+@@ -63,20 +63,22 @@ static int split_field_copy(Picture *dest, Picture *src,
+     return match;
+ }
+ 
+-static int build_def_list(Picture *def, Picture **in, int len, int is_long, int sel){
++static int build_def_list(Picture *def, int def_len,
++                          Picture **in, int len, int is_long, int sel)
++{
+     int i[2]={0};
+     int index=0;
+ 
+-    while(i[0]<len || i[1]<len){
++    while ((i[0] < len || i[1] < len) && index < def_len) {
+         while (i[0] < len && !(in[ i[0] ] && (in[ i[0] ]->f.reference & sel)))
+             i[0]++;
+         while (i[1] < len && !(in[ i[1] ] && (in[ i[1] ]->f.reference & (sel^3))))
+             i[1]++;
+-        if(i[0] < len){
++        if (i[0] < len && index < def_len) {
+             in[ i[0] ]->pic_id= is_long ? i[0] : in[ i[0] ]->frame_num;
+             split_field_copy(&def[index++], in[ i[0]++ ], sel  , 1);
+         }
+-        if(i[1] < len){
++        if (i[1] < len && index < def_len) {
+             in[ i[1] ]->pic_id= is_long ? i[1] : in[ i[1] ]->frame_num;
+             split_field_copy(&def[index++], in[ i[1]++ ], sel^3, 0);
+         }
+@@ -124,9 +126,11 @@ int ff_h264_fill_default_ref_list(H264Context *h){
+             len= add_sorted(sorted    , h->short_ref, h->short_ref_count, cur_poc, 1^list);
+             len+=add_sorted(sorted+len, h->short_ref, h->short_ref_count, cur_poc, 0^list);
+             assert(len<=32);
+-            len= build_def_list(h->default_ref_list[list]    , sorted     , len, 0, s->picture_structure);
+-            len+=build_def_list(h->default_ref_list[list]+len, h->long_ref, 16 , 1, s->picture_structure);
+-            assert(len<=32);
++            len  = build_def_list(h->default_ref_list[list], FF_ARRAY_ELEMS(h->default_ref_list[0]),
++                                  sorted, len, 0, s->picture_structure);
++            len += build_def_list(h->default_ref_list[list] + len,
++                                  FF_ARRAY_ELEMS(h->default_ref_list[0]) - len,
++                                  h->long_ref, 16, 1, s->picture_structure);
+ 
+             if(len < h->ref_count[list])
+                 memset(&h->default_ref_list[list][len], 0, sizeof(Picture)*(h->ref_count[list] - len));
+@@ -139,9 +143,11 @@ int ff_h264_fill_default_ref_list(H264Context *h){
+                 FFSWAP(Picture, h->default_ref_list[1][0], h->default_ref_list[1][1]);
+         }
+     }else{
+-        len = build_def_list(h->default_ref_list[0]    , h->short_ref, h->short_ref_count, 0, s->picture_structure);
+-        len+= build_def_list(h->default_ref_list[0]+len, h-> long_ref, 16                , 1, s->picture_structure);
+-        assert(len <= 32);
++        len  = build_def_list(h->default_ref_list[0], FF_ARRAY_ELEMS(h->default_ref_list[0]),
++                              h->short_ref, h->short_ref_count, 0, s->picture_structure);
++        len += build_def_list(h->default_ref_list[0] + len,
++                              FF_ARRAY_ELEMS(h->default_ref_list[0]) - len,
++                              h-> long_ref, 16, 1, s->picture_structure);
+         if(len < h->ref_count[0])
+             memset(&h->default_ref_list[0][len], 0, sizeof(Picture)*(h->ref_count[0] - len));
+     }

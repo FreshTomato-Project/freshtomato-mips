@@ -1,0 +1,41 @@
+From 0e892b8e870797085bb540ebc9f8a60c45c94aef Mon Sep 17 00:00:00 2001
+From: pedro311 <pedro311@gmail.com>
+Date: Tue, 8 Sep 2026 11:03:33 +0000
+Subject: [PATCH] reject slice number sentinel collision
+
+Backport the 2026 H.264 heap-buffer-overflow fix to the old decoder.
+
+slice_table stores uint16_t slice numbers and uses 0xffff as the
+uninitialized sentinel. The old decoder increments current_slice without
+a bound, so a picture with enough slices can make a real slice number
+collide with that sentinel. This can bypass neighbor guards and lead to
+writes before the top-border allocation at the left edge.
+
+Reject the picture before current_slice can reach 0xffff. The modern fix
+lives in h264_slice.c; FFmpeg 0.11.5 has the same primitive in h264.c.
+
+Upstream-Commit: 39e1969303a0b9ec5fb5f5eb643bf7a5b69c0a89
+Security-Fix: heap-buffer-overflow
+---
+ ffmpeg/libavcodec/h264.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git ffmpeg/libavcodec/h264.c ffmpeg/libavcodec/h264.c
+index d1f019a..dd49731 100644
+--- ffmpeg/libavcodec/h264.c
++++ ffmpeg/libavcodec/h264.c
+@@ -3634,6 +3634,14 @@ static int decode_slice_header(H264Context *h, H264Context *h0)
+                    6 * (h->sps.bit_depth_luma - 8);
+ 
+     h0->last_slice_type = slice_type;
++
++    /* slice_table is uint16_t initialized to 0xFFFF as a sentinel. */
++    if (h0->current_slice >= 0xFFFE) {
++        av_log(s->avctx, AV_LOG_ERROR, "Too many slices (%d)\n",
++               h0->current_slice + 1);
++        return AVERROR_PATCHWELCOME;
++    }
++
+     h->slice_num = ++h0->current_slice;
+ 
+     if (h->slice_num)

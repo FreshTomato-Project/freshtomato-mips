@@ -1,0 +1,33 @@
+From 54a6d8b438189933ab6995da3da2b71a39367eb4 Mon Sep 17 00:00:00 2001
+From: pedro311 <pedro311@gmail.com>
+Date: Tue, 8 Sep 2026 11:03:33 +0000
+Subject: [PATCH] reject truncated VOL headers
+
+Backport the upstream MPEG-4 VOL bitstream bounds check.
+
+The old decoder can enter the complexity-estimation parser with fewer
+than four bits remaining and read beyond the logical input bitstream.
+Reject truncated VOL headers before consuming these fields.
+
+Upstream-Commit: 3edc3b159503d512c919b3d5902f7026e961823a
+Related-CVE: CVE-2014-125005
+---
+ ffmpeg/libavcodec/mpeg4videodec.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git ffmpeg/libavcodec/mpeg4videodec.c ffmpeg/libavcodec/mpeg4videodec.c
+index 263ac99..eb6e062 100644
+--- ffmpeg/libavcodec/mpeg4videodec.c
++++ ffmpeg/libavcodec/mpeg4videodec.c
+@@ -1749,6 +1749,11 @@ static int decode_vol_header(MpegEncContext *s, GetBitContext *gb){
+              s->quarter_sample= get_bits1(gb);
+         else s->quarter_sample=0;
+ 
++        if (get_bits_left(gb) < 4) {
++            av_log(s->avctx, AV_LOG_ERROR, "VOL Header truncated\n");
++            return AVERROR_INVALIDDATA;
++        }
++
+         if(!get_bits1(gb)){
+             int pos= get_bits_count(gb);
+             int estimation_method= get_bits(gb, 2);

@@ -1,0 +1,43 @@
+From 180c3b0aaffe7c59f28e40712a8df652fa9be1c4 Mon Sep 17 00:00:00 2001
+From: pedro311 <pedro311@gmail.com>
+Date: Tue, 8 Sep 2026 11:03:33 +0000
+Subject: [PATCH] bound weighted-prediction denominators
+
+Backport the upstream validation for luma_log2_weight_denom and
+chroma_log2_weight_denom.
+
+Malformed values can otherwise be used as shift counts while building
+weighted-prediction defaults, invoking undefined behavior.  Clamp
+out-of-range denominators before the shifts, matching upstream behavior.
+
+Upstream-Commit: 61296d41e2de3b41304339e4631dd44c2e15f805
+Security-Fix: undefined-behavior
+---
+ ffmpeg/libavcodec/h264.c | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git ffmpeg/libavcodec/h264.c ffmpeg/libavcodec/h264.c
+index e2ee00f..cc631b1 100644
+--- ffmpeg/libavcodec/h264.c
++++ ffmpeg/libavcodec/h264.c
+@@ -2462,6 +2462,20 @@ static int pred_weight_table(H264Context *h)
+     h->luma_log2_weight_denom = get_ue_golomb(&s->gb);
+     if (h->sps.chroma_format_idc)
+         h->chroma_log2_weight_denom = get_ue_golomb(&s->gb);
++
++    if (h->luma_log2_weight_denom > 7U) {
++        av_log(h->s.avctx, AV_LOG_ERROR,
++               "luma_log2_weight_denom %d is out of range\n",
++               h->luma_log2_weight_denom);
++        h->luma_log2_weight_denom = 0;
++    }
++    if (h->chroma_log2_weight_denom > 7U) {
++        av_log(h->s.avctx, AV_LOG_ERROR,
++               "chroma_log2_weight_denom %d is out of range\n",
++               h->chroma_log2_weight_denom);
++        h->chroma_log2_weight_denom = 0;
++    }
++
+     luma_def   = 1 << h->luma_log2_weight_denom;
+     chroma_def = 1 << h->chroma_log2_weight_denom;
+ 

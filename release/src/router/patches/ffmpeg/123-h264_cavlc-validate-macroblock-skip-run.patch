@@ -1,0 +1,39 @@
+From 078a152f3dbcd0402d6115ab013b636a9535f200 Mon Sep 17 00:00:00 2001
+From: pedro311 <pedro311@gmail.com>
+Date: Tue, 8 Sep 2026 11:03:33 +0000
+Subject: [PATCH] validate macroblock skip run
+
+Backport the upstream OSS-Fuzz fix for mb_skip_run.
+
+get_ue_golomb_long() can produce a value that does not fit the signed
+skip counter.  Reject skip runs larger than the picture macroblock count
+before storing and decrementing the value, preventing signed overflow.
+
+Upstream-Commit: f72b9904fe
+Security-Fix: signed-integer-overflow
+---
+ ffmpeg/libavcodec/h264_cavlc.c | 11 +++++++++--
+ 1 file changed, 9 insertions(+), 2 deletions(-)
+
+diff --git ffmpeg/libavcodec/h264_cavlc.c ffmpeg/libavcodec/h264_cavlc.c
+index a0b3a43..2fc76ed 100644
+--- ffmpeg/libavcodec/h264_cavlc.c
++++ ffmpeg/libavcodec/h264_cavlc.c
+@@ -708,8 +708,15 @@ int ff_h264_decode_mb_cavlc(H264Context *h){
+     cbp = 0; /* avoid warning. FIXME: find a solution without slowing
+                 down the code */
+     if(h->slice_type_nos != AV_PICTURE_TYPE_I){
+-        if(s->mb_skip_run==-1)
+-            s->mb_skip_run= get_ue_golomb_long(&s->gb);
++        if(s->mb_skip_run==-1) {
++            unsigned mb_skip_run = get_ue_golomb_long(&s->gb);
++            if (mb_skip_run > s->mb_num) {
++                av_log(h->s.avctx, AV_LOG_ERROR,
++                       "mb_skip_run %u is invalid\n", mb_skip_run);
++                return AVERROR_INVALIDDATA;
++            }
++            s->mb_skip_run = mb_skip_run;
++        }
+ 
+         if (s->mb_skip_run--) {
+             if(FRAME_MBAFF && (s->mb_y&1) == 0){

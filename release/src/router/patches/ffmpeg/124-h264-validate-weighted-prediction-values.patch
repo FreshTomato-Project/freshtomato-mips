@@ -1,0 +1,137 @@
+From 6648bdb72efd52e7e1d5dcefa844bda5d4d990ae Mon Sep 17 00:00:00 2001
+From: pedro311 <pedro311@gmail.com>
+Date: Tue, 8 Sep 2026 11:03:33 +0000
+Subject: [PATCH] validate weighted-prediction values
+
+Backport the later H.264 weight-range validation to the old decoder.
+
+luma_weight, luma_offset, chroma_weight and chroma_offset are constrained
+to signed 8-bit values by the bitstream syntax used here.  Reject values
+outside that range and propagate the parser error from the slice header.
+This prevents malformed weights from reaching arithmetic that can
+overflow and also covers the later invalid-chroma-weight fuzzing fix.
+
+Related-Upstream-Commit: 85c85fffff3f9c75301db3eba1bd5f2fb1e6285d
+Security-Fix: signed-integer-overflow
+---
+ ffmpeg/libavcodec/h264.c      | 19 ++++++++++++++++---
+ ffmpeg/libavcodec/h264.c.orig | 35 +++++++++++++++++++++++++----------
+ 2 files changed, 41 insertions(+), 13 deletions(-)
+
+diff --git ffmpeg/libavcodec/h264.c ffmpeg/libavcodec/h264.c
+index cc631b1..4a53047 100644
+--- ffmpeg/libavcodec/h264.c
++++ ffmpeg/libavcodec/h264.c
+@@ -2489,6 +2489,11 @@ static int pred_weight_table(H264Context *h)
+             if (luma_weight_flag) {
+                 h->luma_weight[i][list][0] = get_se_golomb(&s->gb);
+                 h->luma_weight[i][list][1] = get_se_golomb(&s->gb);
++                if ((int8_t)h->luma_weight[i][list][0] != h->luma_weight[i][list][0] ||
++                    (int8_t)h->luma_weight[i][list][1] != h->luma_weight[i][list][1]) {
++                    av_log(h->s.avctx, AV_LOG_ERROR, "Out of range luma weight\n");
++                    return AVERROR_INVALIDDATA;
++                }
+                 if (h->luma_weight[i][list][0] != luma_def ||
+                     h->luma_weight[i][list][1] != 0) {
+                     h->use_weight             = 1;
+@@ -2506,6 +2511,13 @@ static int pred_weight_table(H264Context *h)
+                     for (j = 0; j < 2; j++) {
+                         h->chroma_weight[i][list][j][0] = get_se_golomb(&s->gb);
+                         h->chroma_weight[i][list][j][1] = get_se_golomb(&s->gb);
++                        if ((int8_t)h->chroma_weight[i][list][j][0] != h->chroma_weight[i][list][j][0] ||
++                            (int8_t)h->chroma_weight[i][list][j][1] != h->chroma_weight[i][list][j][1]) {
++                            h->chroma_weight[i][list][j][0] = chroma_def;
++                            h->chroma_weight[i][list][j][1] = 0;
++                            av_log(h->s.avctx, AV_LOG_ERROR, "Out of range chroma weight\n");
++                            return AVERROR_INVALIDDATA;
++                        }
+                         if (h->chroma_weight[i][list][j][0] != chroma_def ||
+                             h->chroma_weight[i][list][j][1] != 0) {
+                             h->use_weight_chroma = 1;
+@@ -3527,9 +3539,10 @@ static int decode_slice_header(H264Context *h, H264Context *h0)
+ 
+     if ((h->pps.weighted_pred && h->slice_type_nos == AV_PICTURE_TYPE_P) ||
+         (h->pps.weighted_bipred_idc == 1 &&
+-         h->slice_type_nos == AV_PICTURE_TYPE_B))
+-        pred_weight_table(h);
+-    else if (h->pps.weighted_bipred_idc == 2 &&
++         h->slice_type_nos == AV_PICTURE_TYPE_B)) {
++        if (pred_weight_table(h) < 0)
++            return AVERROR_INVALIDDATA;
++    } else if (h->pps.weighted_bipred_idc == 2 &&
+              h->slice_type_nos == AV_PICTURE_TYPE_B) {
+         implicit_weight_table(h, -1);
+     } else {
+diff --git ffmpeg/libavcodec/h264.c.orig ffmpeg/libavcodec/h264.c.orig
+index 5a3cb30..cc631b1 100644
+--- ffmpeg/libavcodec/h264.c.orig
++++ ffmpeg/libavcodec/h264.c.orig
+@@ -147,18 +147,18 @@ int ff_h264_check_intra_pred_mode(H264Context *h, int mode, int is_chroma)
+ 
+     if ((h->left_samples_available & 0x8080) != 0x8080) {
+         mode = left[mode];
+-        if (is_chroma && (h->left_samples_available & 0x8080)) {
+-            // mad cow disease mode, aka MBAFF + constrained_intra_pred
+-            mode = ALZHEIMER_DC_L0T_PRED8x8 +
+-                   (!(h->left_samples_available & 0x8000)) +
+-                   2 * (mode == DC_128_PRED8x8);
+-        }
+         if (mode < 0) {
+             av_log(h->s.avctx, AV_LOG_ERROR,
+                    "left block unavailable for requested intra mode at %d %d\n",
+                    s->mb_x, s->mb_y);
+             return -1;
+         }
++        if (is_chroma && (h->left_samples_available & 0x8080)) {
++            // mad cow disease mode, aka MBAFF + constrained_intra_pred
++            mode = ALZHEIMER_DC_L0T_PRED8x8 +
++                   (!(h->left_samples_available & 0x8000)) +
++                   2 * (mode == DC_128_PRED8x8);
++        }
+     }
+ 
+     return mode;
+@@ -2462,6 +2462,20 @@ static int pred_weight_table(H264Context *h)
+     h->luma_log2_weight_denom = get_ue_golomb(&s->gb);
+     if (h->sps.chroma_format_idc)
+         h->chroma_log2_weight_denom = get_ue_golomb(&s->gb);
++
++    if (h->luma_log2_weight_denom > 7U) {
++        av_log(h->s.avctx, AV_LOG_ERROR,
++               "luma_log2_weight_denom %d is out of range\n",
++               h->luma_log2_weight_denom);
++        h->luma_log2_weight_denom = 0;
++    }
++    if (h->chroma_log2_weight_denom > 7U) {
++        av_log(h->s.avctx, AV_LOG_ERROR,
++               "chroma_log2_weight_denom %d is out of range\n",
++               h->chroma_log2_weight_denom);
++        h->chroma_log2_weight_denom = 0;
++    }
++
+     luma_def   = 1 << h->luma_log2_weight_denom;
+     chroma_def = 1 << h->chroma_log2_weight_denom;
+ 
+@@ -3043,10 +3057,7 @@ static int decode_slice_header(H264Context *h, H264Context *h0)
+ 
+     if (h->pps.sps_id != h->current_sps_id ||
+         h0->sps_buffers[h->pps.sps_id]->new) {
+-        h0->sps_buffers[h->pps.sps_id]->new = 0;
+-
+-        h->current_sps_id = h->pps.sps_id;
+-        h->sps            = *h0->sps_buffers[h->pps.sps_id];
++        h->sps = *h0->sps_buffers[h->pps.sps_id];
+     }
+ 
+     s->avctx->profile = ff_h264_get_profile(&h->sps);
+@@ -3695,6 +3706,10 @@ static int decode_slice_header(H264Context *h, H264Context *h0)
+                          ? 0 : 16;
+     h->emu_edge_height = (FRAME_MBAFF || FIELD_PICTURE) ? 0 : h->emu_edge_width;
+ 
++    h->sps.new =
++    h0->sps_buffers[h->pps.sps_id]->new = 0;
++    h->current_sps_id = h->pps.sps_id;
++
+     if (s->avctx->debug & FF_DEBUG_PICT_INFO) {
+         av_log(h->s.avctx, AV_LOG_DEBUG,
+                "slice:%d %s mb:%d %c%s%s pps:%u frame:%d poc:%d/%d ref:%d/%d qp:%d loop:%d:%d:%d weight:%d%s %s\n",

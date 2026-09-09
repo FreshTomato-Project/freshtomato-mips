@@ -287,8 +287,10 @@ extern void stop_cron(void);
 extern void start_phy_tempsense(void);
 extern void stop_phy_tempsense(void);
 #endif
+#ifdef TCONFIG_ADBLOCK
 extern void start_adblock(int update);
 extern void stop_adblock(void);
+#endif
 #ifdef TCONFIG_ZEBRA
 extern void start_zebra(void);
 extern void stop_zebra(void);

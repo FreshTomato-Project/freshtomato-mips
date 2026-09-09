@@ -18,6 +18,10 @@
 #include <typedefs.h>
 #include <sys/reboot.h>
 
+/* needed by logmsg() */
+#define LOGMSG_DISABLE		DISABLE_SYSLOG_OSM
+#define LOGMSG_NVDEBUG		"config_debug"
+
 
 void wo_defaults(char *url)
 {
@@ -34,6 +38,11 @@ void wo_defaults(char *url)
 			webcgi_set("resreset", "1");
 			parse_asp("reboot.asp");
 			web_close();
+			/* Allow linked reboot page assets to finish loading. */
+			sleep(2);
+
+			if (!finalize_upgrade())
+				logmsg(LOG_WARNING, "upgrade-finalize did not complete before timeout");
 
 			if (mode == 1) {
 				nvram_set("restore_defaults", "1");
@@ -45,12 +54,6 @@ void wo_defaults(char *url)
 #else
 				eval("mtd-erase", "-d", "nvram");
 #endif
-
-			if (nvram_get_int("remote_upgrade")) {
-				killall("xl2tpd", SIGTERM);
-				killall("pppd", SIGTERM);
-			}
-			sleep(2);
 
 			set_action(ACT_REBOOT);
 			sync();
@@ -176,7 +179,7 @@ void wi_restore(char *url, int len, char *boundary)
 
 	rboot = 1;
 
-	/* stop services and prepare system for restore */
+	/* stop non-essential services and prepare for restore */
 	prepare_upgrade();
 
 	/*
@@ -218,17 +221,16 @@ ERROR:
 void wo_restore(char *url)
 {
 	if (rboot) {
-		set_action(ACT_REBOOT);
-		sync();
 		parse_asp("reboot.asp");
 		web_close();
-
-		if (nvram_get_int("remote_upgrade")) {
-			killall("xl2tpd", SIGTERM);
-			killall("pppd", SIGTERM);
-		}
-
+		/* Allow linked reboot page assets to finish loading. */
 		sleep(2);
+
+		if (!finalize_upgrade())
+			logmsg(LOG_WARNING, "upgrade-finalize did not complete before timeout");
+
+		set_action(ACT_REBOOT);
+		sync();
 
 		reboot(RB_AUTOBOOT);
 

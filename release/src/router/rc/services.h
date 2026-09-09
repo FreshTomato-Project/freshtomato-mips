@@ -43,7 +43,9 @@
 #define SVCOP_SPECIAL		0x80
 #define SVCOP_RSTATS		(SVCOP_SPECIAL | 0x01)
 #define SVCOP_CSTATS		(SVCOP_SPECIAL | 0x02)
+#ifdef TCONFIG_ADBLOCK
 #define SVCOP_ADBLOCK		(SVCOP_SPECIAL | 0x03)
+#endif
 #define SVCOP_UPNP		(SVCOP_SPECIAL | 0x04)
 #ifdef TCONFIG_BT
 #define SVCOP_BITTORRENT	(SVCOP_SPECIAL | 0x05)
@@ -98,6 +100,7 @@
 #define SVCOP_WAN		(SVCOP_SPECIAL | 0x21)
 #define SVCOP_NET		(SVCOP_SPECIAL | 0x22)
 #define SVCOP_UPGRADE		(SVCOP_SPECIAL | 0x23)
+#define SVCOP_UPGRADE_FINALIZE	(SVCOP_SPECIAL | 0x24)
 
 #define SVC_OP(_stop, _start)	{ _stop, _start }
 
@@ -301,7 +304,9 @@ static const char * const svc_proc_name[] = {
  * start/stop dispatcher path used by exec_service().
  */
 static const struct svc_entry svc_table[] = {
+#ifdef TCONFIG_ADBLOCK
 	{ "adblock",		SVCF_LIST | SVCF_NO_STATUS,					P_NONE,			1,	SVCOP_ADBLOCK		},
+#endif
 	{ "adminnosshd",	SVCF_NO_STATUS,							P_NONE,			1,	SVCOP_ADMIN		},
 	{ "admin",		SVCF_LIST | SVCF_PREFIX | SVCF_NO_STATUS,			P_NONE,			0,	SVCOP_ADMIN		},
 	{ "arpbind",		SVCF_LIST | SVCF_NO_STATUS,					P_NONE,			0,	SVCOP_ARPBIND		},
@@ -427,6 +432,7 @@ static const struct svc_entry svc_table[] = {
 	{ "tor_newnym",		SVCF_NO_STATUS,							P_NONE,			0,	SVCOP_TOR		},
 #endif
 	{ "upgrade",		SVCF_NO_STATUS,							P_NONE,			0,	SVCOP_UPGRADE		},
+	{ "upgradefinalize",	SVCF_NO_STATUS,							P_NONE,			0,	SVCOP_UPGRADE_FINALIZE	},
 	{ "upnp",		SVCF_LIST,							P_MINIUPNPD,		0,	SVCOP_UPNP		},
 	{ "miniupnpd",		0,								P_MINIUPNPD,		0,	SVCOP_UPNP		},
 	{ "upnp_nvram",		SVCF_NO_STATUS,							P_NONE,			0,	SVCOP_UPNP_NVRAM	},

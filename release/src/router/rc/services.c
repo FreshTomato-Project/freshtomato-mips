@@ -51,7 +51,9 @@
 #define LOGMSG_NVDEBUG		"services_debug"
 
 
+#ifdef TCONFIG_ADBLOCK
 const char adblockexe[]    = "/usr/sbin/adblock";
+#endif
 const char upnppath[]      = "/etc/upnp";
 const char upnpcfg[]       = "/etc/upnp/config";
 const char upnpcfgalt[]    = "/etc/upnp/config.alt";
@@ -708,6 +710,7 @@ void stop_phy_tempsense(void)
 }
 #endif /* TCONFIG_FANCTRL */
 
+#ifdef TCONFIG_ADBLOCK
 void start_adblock(int update)
 {
 	if (nvram_get_int("g_upgrade") || nvram_get_int("g_reboot"))
@@ -728,6 +731,7 @@ void stop_adblock(void)
 {
 	xstart(adblockexe, "stop");
 }
+#endif /* TCONFIG_ADBLOCK */
 
 #ifdef TCONFIG_IPV6
 static int write_ipv6_dns_servers(FILE *f, const char *prefix, char *dns, const char *suffix, int once)
@@ -2894,14 +2898,16 @@ static int svc_exec_simple(const struct svc_entry *svc, const char *service, int
 					stop_dnsmasq();
 					killall("udhcpc", SIGTERM);
 					stop_wan();
-				} else
+				}
+#ifdef TCONFIG_ADBLOCK
+				else
 					stop_adblock();
+#endif
 
 #ifdef TCONFIG_SNMP
 				stop_snmp();
 #endif
 				stop_tomatoanon();
-				remove_conntrack();
 #ifdef TCONFIG_ZEBRA
 				stop_zebra();
 #endif
@@ -2915,16 +2921,43 @@ static int svc_exec_simple(const struct svc_entry *svc, const char *service, int
 				stop_haveged();
 #endif
 				stop_jffs2();
-				stop_syslog();
-				sleep(1);
-#ifdef TCONFIG_USB
-#ifdef TCONFIG_USBAP
+			}
+			return 1;
+		case SVCOP_UPGRADE_FINALIZE:
+			if (act_start) {
+				/*
+				 * Keep the client-facing network alive through upgrade-start so
+				 * httpd can finish the reboot response. Tear it down only after
+				 * web_close(), immediately before the MTD write.
+				 */
+				if (nvram_get_int("remote_upgrade")) {
+					killall("xl2tpd", SIGTERM);
+					killall("pppd", SIGTERM);
+					stop_dnsmasq();
+					killall("udhcpc", SIGTERM);
+					stop_wan();
+				}
+
+				remove_conntrack();
+
+				/*
+				 * Stop wireless before USB on all builds. Some MIPS models use
+				 * wl_high through USBAP, and wireless shutdown may still emit
+				 * useful diagnostics, so keep syslog alive until it completes.
+				 */
 				stop_wireless();
 				sleep(1);
-#endif
+
+				stop_syslog();
+				sleep(1);
+				sync();
+
+#ifdef TCONFIG_USB
+				/* Unmount storage only after wireless and logging are down. */
 				remove_storage_main(1);
 				stop_usb();
-#endif /* TCONFIG_USB */
+#endif
+				sync();
 			}
 			return 1;
 		case SVCOP_FIREWALL:
@@ -3097,12 +3130,14 @@ static int svc_exec_simple(const struct svc_entry *svc, const char *service, int
 			if (act_start)
 				start_cstats(svc->arg);
 			return 1;
+#ifdef TCONFIG_ADBLOCK
 		case SVCOP_ADBLOCK:
 			if (act_stop)
 				stop_adblock();
 			if (act_start)
 				start_adblock(svc->arg);
 			return 1;
+#endif
 		case SVCOP_UPNP:
 			if (act_stop)
 				stop_upnp();

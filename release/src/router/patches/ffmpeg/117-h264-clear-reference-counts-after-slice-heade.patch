@@ -1,0 +1,50 @@
+From 8d73c917a8374b65e9328c581fdc0b13e02869a5 Mon Sep 17 00:00:00 2001
+From: pedro311 <pedro311@gmail.com>
+Date: Tue, 8 Sep 2026 11:03:33 +0000
+Subject: [PATCH] clear reference counts after slice-header
+
+A failed slice header can leave reference counts from a partially initialized
+slice. Error-resilience code may subsequently follow those stale references
+after the underlying pictures have been freed.
+
+Upstream-Commit: 35ba079fbf281a066f3ac1e1271f3caa402dcd74
+Security-Fix: use-after-free
+---
+ ffmpeg/libavcodec/h264.c      | 5 +++--
+ ffmpeg/libavcodec/h264.c.orig | 6 ++++++
+ 2 files changed, 9 insertions(+), 2 deletions(-)
+
+diff --git ffmpeg/libavcodec/h264.c ffmpeg/libavcodec/h264.c
+index ebedb9a..11706d4 100644
+--- ffmpeg/libavcodec/h264.c
++++ ffmpeg/libavcodec/h264.c
+@@ -4583,9 +4583,10 @@ again:
+                 context_count = 0;
+             }
+ 
+-            if (err < 0)
++            if (err < 0) {
+                 av_log(h->s.avctx, AV_LOG_ERROR, "decode_slice_header error\n");
+-            else if (err == 1) {
++                h->ref_count[0] = h->ref_count[1] = h->list_count = 0;
++            } else if (err == 1) {
+                 /* Slice could not be decoded in parallel mode, copy down
+                  * NAL unit stuff to context 0 and restart. Note that
+                  * rbsp_buffer is not transferred, but since we no longer
+diff --git ffmpeg/libavcodec/h264.c.orig ffmpeg/libavcodec/h264.c.orig
+index 794fdd1..ebedb9a 100644
+--- ffmpeg/libavcodec/h264.c.orig
++++ ffmpeg/libavcodec/h264.c.orig
+@@ -4262,6 +4262,12 @@ static int execute_decode_slices(H264Context *h, int context_count)
+     H264Context *hx;
+     int i;
+ 
++    if (s->mb_y >= s->mb_height) {
++        av_log(s->avctx, AV_LOG_ERROR,
++               "Input contains more MB rows than the frame height.\n");
++        return AVERROR_INVALIDDATA;
++    }
++
+     if (s->avctx->hwaccel ||
+         s->avctx->codec->capabilities & CODEC_CAP_HWACCEL_VDPAU)
+         return 0;

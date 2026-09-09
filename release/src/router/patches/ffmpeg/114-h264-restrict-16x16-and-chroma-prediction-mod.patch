@@ -1,0 +1,33 @@
+From d670eced3b1c8d897ab1aa50fcc16860ee24a8b4 Mon Sep 17 00:00:00 2001
+From: pedro311 <pedro311@gmail.com>
+Date: Tue, 8 Sep 2026 11:03:33 +0000
+Subject: [PATCH] restrict 16x16 and chroma prediction modes
+
+ff_h264_check_intra_pred_mode() is used for 16x16/chroma prediction, where
+modes above 3 are invalid. Accepting the larger range could select an invalid
+fallback mode and lead to invalid reads.
+
+Upstream-Commit: 51ae8e26af8f5b26efb41edc0fe4812368d16ae9
+Security-Fix: invalid-read
+---
+ ffmpeg/libavcodec/h264.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git ffmpeg/libavcodec/h264.c ffmpeg/libavcodec/h264.c
+index e2d2375..794fdd1 100644
+--- ffmpeg/libavcodec/h264.c
++++ ffmpeg/libavcodec/h264.c
+@@ -125,10 +125,10 @@ int ff_h264_check_intra4x4_pred_mode(H264Context *h)
+ int ff_h264_check_intra_pred_mode(H264Context *h, int mode, int is_chroma)
+ {
+     MpegEncContext *const s     = &h->s;
+-    static const int8_t top[7]  = { LEFT_DC_PRED8x8, 1, -1, -1 };
+-    static const int8_t left[7] = { TOP_DC_PRED8x8, -1, 2, -1, DC_128_PRED8x8 };
++    static const int8_t top[4]  = { LEFT_DC_PRED8x8, 1, -1, -1 };
++    static const int8_t left[5] = { TOP_DC_PRED8x8, -1, 2, -1, DC_128_PRED8x8 };
+ 
+-    if (mode > 6U) {
++    if (mode > 3U) {
+         av_log(h->s.avctx, AV_LOG_ERROR,
+                "out of range intra chroma pred mode at %d %d\n",
+                s->mb_x, s->mb_y);

@@ -1,0 +1,30 @@
+From 5e2bc0d9226312e15b7cf1a3b68a24e5b3a38984 Mon Sep 17 00:00:00 2001
+From: pedro311 <pedro311@gmail.com>
+Date: Tue, 8 Sep 2026 11:03:33 +0000
+Subject: [PATCH] tighten coefficient absolute-value
+
+Backport the upstream CABAC coefficient bound.
+
+An unbounded unary prefix can make coeff_abs overflow while decoding a
+crafted residual.  Limit the bypass prefix to the H.264 transform
+coefficient range before reconstructing coeff_abs.
+
+Upstream-Commit: f26a63c4ee1bdbe21d7ab462cd66f8ba20b14244
+Security-Fix: integer-overflow
+---
+ ffmpeg/libavcodec/h264_cabac.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git ffmpeg/libavcodec/h264_cabac.c ffmpeg/libavcodec/h264_cabac.c
+index d85ebf5..4831c6a 100644
+--- ffmpeg/libavcodec/h264_cabac.c
++++ ffmpeg/libavcodec/h264_cabac.c
+@@ -1714,7 +1714,7 @@ decode_cabac_residual_internal(H264Context *h, DCTELEM *block,
+ \
+             if( coeff_abs >= 15 ) { \
+                 int j = 0; \
+-                while( get_cabac_bypass( CC ) ) { \
++                while( get_cabac_bypass( CC ) && j < 16 + 7 ) { \
+                     j++; \
+                 } \
+ \

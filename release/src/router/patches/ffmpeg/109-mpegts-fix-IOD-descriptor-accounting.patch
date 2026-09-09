@@ -1,0 +1,45 @@
+From 00250dc5ab08a6d1e244609401acebcf8964cf84 Mon Sep 17 00:00:00 2001
+From: pedro311 <pedro311@gmail.com>
+Date: Tue, 8 Sep 2026 11:03:32 +0000
+Subject: [PATCH] fix IOD descriptor accounting
+
+Backport the upstream stack-buffer-overflow fix for multiple IOD
+descriptors in a PMT.
+
+pmt_cb() passes mp4_descr + mp4_descr_count as the output base. The old
+code nevertheless gives each parser invocation the full 16-entry capacity
+and overwrites the caller's running descriptor count. Multiple IOD
+descriptors can therefore write past mp4_descr[].
+
+Accumulate the number of parsed descriptors and pass only the remaining
+array capacity to each subsequent parser invocation.
+
+Upstream-Commit: 3e8bec7871bae6722f8f615020374c1b53de7b56
+Security: stack-buffer-overflow
+Found-by: Nicholas Carlini
+---
+ ffmpeg/libavformat/mpegts.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git ffmpeg/libavformat/mpegts.c ffmpeg/libavformat/mpegts.c
+index 03ae401..91a13d1 100644
+--- ffmpeg/libavformat/mpegts.c
++++ ffmpeg/libavformat/mpegts.c
+@@ -1188,7 +1188,7 @@ static int mp4_read_iods(AVFormatContext *s, const uint8_t *buf, unsigned size,
+ 
+     parse_mp4_descr(&d, avio_tell(&d.pb), size, MP4IODescrTag);
+ 
+-    *descr_count = d.descr_count;
++    *descr_count += d.descr_count;
+     return 0;
+ }
+ 
+@@ -1458,7 +1458,7 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
+             get8(&p, p_end); // label
+             len -= 2;
+             mp4_read_iods(ts->stream, p, len, mp4_descr + mp4_descr_count,
+-                          &mp4_descr_count, MAX_MP4_DESCR_COUNT);
++                          &mp4_descr_count, MAX_MP4_DESCR_COUNT - mp4_descr_count);
+         } else if (tag == 0x05 && len >= 4) { // registration descriptor
+             prog_reg_desc = bytestream_get_le32(&p);
+             len -= 4;

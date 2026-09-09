@@ -1,0 +1,64 @@
+From 775e0d1e9a7ff118c1eca6d5768c798fba56f79a Mon Sep 17 00:00:00 2001
+From: pedro311 <pedro311@gmail.com>
+Date: Tue, 8 Sep 2026 11:03:33 +0000
+Subject: [PATCH] delay current SPS state update until slice
+
+Do not clear sps->new or publish current_sps_id before the complete slice
+header and per-slice initialization have succeeded. A malformed slice can
+otherwise leave a half-initialized context marked as current and trigger an
+out-of-bounds read on subsequent input.
+
+The same vulnerable state transition was later assigned CVE-2014-125018.
+
+Upstream-Commit: 8a3b85f3a7952c54a2c36ba1797f7e0cde9f85aa
+Related-CVE: CVE-2014-125018
+Security-Fix: heap-out-of-bounds-read
+---
+ ffmpeg/libavcodec/h264.c      | 9 +++++----
+ ffmpeg/libavcodec/h264.c.orig | 6 ++++--
+ 2 files changed, 9 insertions(+), 6 deletions(-)
+
+diff --git ffmpeg/libavcodec/h264.c ffmpeg/libavcodec/h264.c
+index 5a3cb30..b5709eb 100644
+--- ffmpeg/libavcodec/h264.c
++++ ffmpeg/libavcodec/h264.c
+@@ -3043,10 +3043,7 @@ static int decode_slice_header(H264Context *h, H264Context *h0)
+ 
+     if (h->pps.sps_id != h->current_sps_id ||
+         h0->sps_buffers[h->pps.sps_id]->new) {
+-        h0->sps_buffers[h->pps.sps_id]->new = 0;
+-
+-        h->current_sps_id = h->pps.sps_id;
+-        h->sps            = *h0->sps_buffers[h->pps.sps_id];
++        h->sps = *h0->sps_buffers[h->pps.sps_id];
+     }
+ 
+     s->avctx->profile = ff_h264_get_profile(&h->sps);
+@@ -3695,6 +3692,10 @@ static int decode_slice_header(H264Context *h, H264Context *h0)
+                          ? 0 : 16;
+     h->emu_edge_height = (FRAME_MBAFF || FIELD_PICTURE) ? 0 : h->emu_edge_width;
+ 
++    h->sps.new =
++    h0->sps_buffers[h->pps.sps_id]->new = 0;
++    h->current_sps_id = h->pps.sps_id;
++
+     if (s->avctx->debug & FF_DEBUG_PICT_INFO) {
+         av_log(h->s.avctx, AV_LOG_DEBUG,
+                "slice:%d %s mb:%d %c%s%s pps:%u frame:%d poc:%d/%d ref:%d/%d qp:%d loop:%d:%d:%d weight:%d%s %s\n",
+diff --git ffmpeg/libavcodec/h264.c.orig ffmpeg/libavcodec/h264.c.orig
+index 11706d4..5a3cb30 100644
+--- ffmpeg/libavcodec/h264.c.orig
++++ ffmpeg/libavcodec/h264.c.orig
+@@ -3588,8 +3588,10 @@ static int decode_slice_header(H264Context *h, H264Context *h0)
+         if (h->deblocking_filter) {
+             h->slice_alpha_c0_offset += get_se_golomb(&s->gb) << 1;
+             h->slice_beta_offset     += get_se_golomb(&s->gb) << 1;
+-            if (h->slice_alpha_c0_offset > 104U ||
+-                h->slice_beta_offset     > 104U) {
++            if (h->slice_alpha_c0_offset < 52 - 12 ||
++                h->slice_alpha_c0_offset > 52 + 12 ||
++                h->slice_beta_offset     < 52 - 12 ||
++                h->slice_beta_offset     > 52 + 12) {
+                 av_log(s->avctx, AV_LOG_ERROR,
+                        "deblocking filter parameters %d %d out of range\n",
+                        h->slice_alpha_c0_offset, h->slice_beta_offset);

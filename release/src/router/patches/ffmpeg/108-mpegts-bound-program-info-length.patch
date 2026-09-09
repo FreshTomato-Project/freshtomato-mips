@@ -1,0 +1,31 @@
+From b327005d1bd9ce3c8726f4478368c1eaee769fa2 Mon Sep 17 00:00:00 2001
+From: pedro311 <pedro311@gmail.com>
+Date: Tue, 8 Sep 2026 11:03:32 +0000
+Subject: [PATCH] bound PMT program info length
+
+Backport the upstream PMT bounds check.
+
+program_info_length is supplied by the input stream. Verify that the
+12-bit descriptor area fits inside the current PMT section before walking
+its descriptors, preventing reads beyond the validated section boundary.
+
+Upstream-Commit: 1fd718c6a9764d591e3d0b8d01511ce0d91a7f58
+Security: out-of-bounds read hardening
+---
+ ffmpeg/libavformat/mpegts.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git ffmpeg/libavformat/mpegts.c ffmpeg/libavformat/mpegts.c
+index 66f3e03..03ae401 100644
+--- ffmpeg/libavformat/mpegts.c
++++ ffmpeg/libavformat/mpegts.c
+@@ -1438,7 +1438,8 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
+     av_dlog(ts->stream, "pcr_pid=0x%x\n", pcr_pid);
+ 
+     program_info_length = get16(&p, p_end);
+-    if (program_info_length < 0)
++    if (program_info_length < 0 ||
++        (program_info_length & 0xfff) > p_end - p)
+         return;
+     program_info_length &= 0xfff;
+     while(program_info_length >= 2) {
