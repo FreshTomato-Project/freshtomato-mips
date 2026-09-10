@@ -2378,13 +2378,13 @@ pcre2: pcre2/build/Makefile
 	@$(MAKE) -C pcre2/build DESTDIR=$(TOP)/pcre2/staged install
 
 pcre2-install:
-	install -D pcre2/staged/usr/lib/libpcre2-8.so.0.15.0 $(INSTALLDIR)/pcre2/usr/lib/libpcre2-8.so.0.15.0
-	$(STRIP) -s $(INSTALLDIR)/pcre2/usr/lib/libpcre2-8.so.0.15.0
-	cd $(INSTALLDIR)/pcre2/usr/lib/ && ln -sf libpcre2-8.so.0.15.0 libpcre2-8.so.0 && ln -sf libpcre2-8.so.0.15.0 libpcre2-8.so
+	install -D pcre2/staged/usr/lib/libpcre2-8.so.0.16.0 $(INSTALLDIR)/pcre2/usr/lib/libpcre2-8.so.0.16.0
+	$(STRIP) -s $(INSTALLDIR)/pcre2/usr/lib/libpcre2-8.so.0.16.0
+	cd $(INSTALLDIR)/pcre2/usr/lib/ && ln -sf libpcre2-8.so.0.16.0 libpcre2-8.so.0 && ln -sf libpcre2-8.so.0.16.0 libpcre2-8.so
 ifeq ($(TCONFIG_AIO),y)
-	install -D pcre2/staged/usr/lib/libpcre2-posix.so.3.0.7 $(INSTALLDIR)/pcre2/usr/lib/libpcre2-posix.so.3.0.7
-	$(STRIP) -s $(INSTALLDIR)/pcre2/usr/lib/libpcre2-posix.so.3.0.7
-	cd $(INSTALLDIR)/pcre2/usr/lib/ && ln -sf libpcre2-posix.so.3.0.7 libpcre2-posix.so.3 && ln -sf libpcre2-posix.so.3.0.7 libpcre2-posix.so
+	install -D pcre2/staged/usr/lib/libpcre2-posix.so.3.0.8 $(INSTALLDIR)/pcre2/usr/lib/libpcre2-posix.so.3.0.8
+	$(STRIP) -s $(INSTALLDIR)/pcre2/usr/lib/libpcre2-posix.so.3.0.8
+	cd $(INSTALLDIR)/pcre2/usr/lib/ && ln -sf libpcre2-posix.so.3.0.8 libpcre2-posix.so.3 && ln -sf libpcre2-posix.so.3.0.8 libpcre2-posix.so
 endif
 
 pcre2-clean:
@@ -2498,9 +2498,9 @@ libxml2: libxml2/static/Makefile libxml2/build/Makefile
 
 libxml2-install:
 ifeq ($(TCONFIG_BCMARM),y)
-	install -D libxml2/staged/usr/lib/libxml2.so.16.1.3 $(INSTALLDIR)/libxml2/usr/lib/libxml2.so.16.1.3
-	$(STRIP) $(INSTALLDIR)/libxml2/usr/lib/libxml2.so.16.1.3
-	cd $(INSTALLDIR)/libxml2/usr/lib && ln -sf libxml2.so.16.1.3 libxml2.so.16 && ln -sf libxml2.so.16.1.3 libxml2.so
+	install -D libxml2/staged/usr/lib/libxml2.so.16.1.4 $(INSTALLDIR)/libxml2/usr/lib/libxml2.so.16.1.4
+	$(STRIP) $(INSTALLDIR)/libxml2/usr/lib/libxml2.so.16.1.4
+	cd $(INSTALLDIR)/libxml2/usr/lib && ln -sf libxml2.so.16.1.4 libxml2.so.16 && ln -sf libxml2.so.16.1.4 libxml2.so
 else
 	install -D libxml2/staged/usr/lib/libxml2.so.2.13.7 $(INSTALLDIR)/libxml2/usr/lib/libxml2.so.2.13.7
 	$(STRIP) $(INSTALLDIR)/libxml2/usr/lib/libxml2.so.2.13.7
@@ -3898,8 +3898,8 @@ expat: expat/static/Makefile expat/build/Makefile
 	@$(MAKE) -C expat/build DESTDIR=$(TOP)/expat/staged install
 
 expat-install:
-	install -D expat/build/libexpat.so.1.12.2 $(INSTALLDIR)/expat/usr/lib/libexpat.so.1.12.2
-	cd $(INSTALLDIR)/expat/usr/lib && $(STRIP) libexpat.so.1.12.2 && ln -sf libexpat.so.1.12.2 libexpat.so.1
+	install -D expat/build/libexpat.so.1.12.4 $(INSTALLDIR)/expat/usr/lib/libexpat.so.1.12.4
+	cd $(INSTALLDIR)/expat/usr/lib && $(STRIP) libexpat.so.1.12.4 && ln -sf libexpat.so.1.12.4 libexpat.so.1
 
 expat-clean:
 	@rm -rf expat/static
@@ -4258,9 +4258,9 @@ libffi: libffi/stamp-h1
 
 libffi-install:
 ifeq ($(TCONFIG_IRQBALANCE),y)
-	install -D $(TOP)/libffi/.libs/libffi.so.8.4.1 $(INSTALLDIR)/libffi/usr/lib/libffi.so.8.4.1
-	$(STRIP) $(INSTALLDIR)/libffi/usr/lib/libffi.so.8.4.1
-	cd $(INSTALLDIR)/libffi/usr/lib && ln -sf libffi.so.8.4.1 libffi.so.8 && ln -sf libffi.so.8.4.1 libffi.so
+	install -D $(TOP)/libffi/.libs/libffi.so.8.5.0 $(INSTALLDIR)/libffi/usr/lib/libffi.so.8.5.0
+	$(STRIP) $(INSTALLDIR)/libffi/usr/lib/libffi.so.8.5.0
+	cd $(INSTALLDIR)/libffi/usr/lib && ln -sf libffi.so.8.5.0 libffi.so.8 && ln -sf libffi.so.8.5.0 libffi.so
 endif
 	@true
 
