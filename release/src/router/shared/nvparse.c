@@ -105,8 +105,7 @@ get_autofw_port(int which, netconf_app_t *app)
 	snprintf(name, sizeof(name), "autofw_port%d", which);
 	if (!nvram_invmatch(name, ""))
 		return FALSE;
-	strncpy(value, nvram_get(name), sizeof(value) - 1);
-	value[sizeof(value) - 1] = '\0';
+	strlcpy(value, nvram_get(name), sizeof(value));
 
 	/* Check for outbound port specification */
 	out_start = value;
@@ -194,10 +193,10 @@ get_autofw_port(int which, netconf_app_t *app)
 
 	/* Parse description */
 	if (desc)
-		strncpy(app->desc, desc, sizeof(app->desc) - 1);
+		strlcpy(app->desc, desc, sizeof(app->desc));
 
 	/* Set interface name (match packets entering LAN interface) */
-	strncpy(app->match.in.name, nvram_safe_get("lan_ifname"), sizeof(app->match.in.name) - 1);
+	strlcpy(app->match.in.name, nvram_safe_get("lan_ifname"), sizeof(app->match.in.name));
 
 	/* Set LAN source port range (match packets from any source port) */
 	app->match.src.ports[1] = htons(0xffff);
@@ -327,7 +326,7 @@ get_forward_port(int which, netconf_nat_t *nat)
 	if (strlen(nvram_get_ptr) >= sizeof(value))
 		return FALSE;
 	else
-		strncpy(value, nvram_get_ptr, sizeof(value));
+		strlcpy(value, nvram_get_ptr, sizeof(value));
 
 	/* Check for LAN IP address specification */
 	lan_ipaddr = value;
@@ -394,8 +393,7 @@ get_forward_port(int which, netconf_nat_t *nat)
 
 	/* Parse description */
 	if (desc) {
-		strncpy(nat->desc, desc, sizeof(nat->desc) - 1);
-		nat->desc[sizeof(nat->desc) - 1] = '\0';
+		strlcpy(nat->desc, desc, sizeof(nat->desc));
 	}
 	/* Set WAN source port range (match packets from any source port) */
 	nat->match.src.ports[1] = htons(0xffff);
@@ -577,7 +575,7 @@ get_filter_client(int which, netconf_filter_t *start, netconf_filter_t *end)
 	if (strlen(nvram_get_ptr) >= sizeof(value))
 		return FALSE;
 	else
-		strncpy(value, nvram_get_ptr, sizeof(value));
+		strlcpy(value, nvram_get_ptr, sizeof(value));
 
 	/* Check for port specification */
 	lan_port0 = value;
@@ -675,10 +673,8 @@ get_filter_client(int which, netconf_filter_t *start, netconf_filter_t *end)
 
 	/* Parse description */
 	if (desc) {
-		strncpy(start->desc, desc, sizeof(start->desc) - 1);
-		start->desc[sizeof(start->desc) - 1] = '\0';
-		strncpy(end->desc, desc, sizeof(end->desc) - 1);
-		end->desc[sizeof(end->desc) - 1] = '\0';
+		strlcpy(start->desc, desc, sizeof(start->desc));
+		strlcpy(end->desc, desc, sizeof(end->desc));
 	}
 
 	/* Set interface name (match packets entering LAN interface) */
@@ -686,7 +682,7 @@ get_filter_client(int which, netconf_filter_t *start, netconf_filter_t *end)
 	if (strlen(nvram_get_ptr) >= sizeof(start->match.in.name))
 		return FALSE;
 	else
-		strncpy(start->match.in.name, nvram_get_ptr, sizeof(start->match.in.name));
+		strlcpy(start->match.in.name, nvram_get_ptr, sizeof(start->match.in.name));
 
 	/* Set source port range (match packets from any source port) */
 	start->match.src.ports[1] = end->match.src.ports[1] = htons(0xffff);
@@ -811,7 +807,7 @@ get_filter_url(int which, netconf_urlfilter_t *start, netconf_urlfilter_t *end)
 	snprintf(name, sizeof(name), "filter_url%d", which);
 	if (!nvram_invmatch(name, ""))
 		return FALSE;
-	strncpy(value, nvram_get(name), sizeof(value));
+	strlcpy(value, nvram_get(name), sizeof(value));
 
 	/* Check for URL */
 	url = value;
@@ -853,18 +849,18 @@ get_filter_url(int which, netconf_urlfilter_t *start, netconf_urlfilter_t *end)
 
 	/* Parse description */
 	if (url) {
-		strncpy(start->url, url, sizeof(start->url));
-		strncpy(end->url, url, sizeof(end->url));
+		strlcpy(start->url, url, sizeof(start->url));
+		strlcpy(end->url, url, sizeof(end->url));
 	}
 
 	/* Parse description */
 	if (desc) {
-		strncpy(start->desc, desc, sizeof(start->desc));
-		strncpy(end->desc, desc, sizeof(end->desc));
+		strlcpy(start->desc, desc, sizeof(start->desc));
+		strlcpy(end->desc, desc, sizeof(end->desc));
 	}
 
 	/* Set interface name (match packets entering LAN interface) */
-	strncpy(start->match.in.name, nvram_safe_get("lan_ifname"), IFNAMSIZ);
+	strlcpy(start->match.in.name, nvram_safe_get("lan_ifname"), sizeof(start->match.in.name));
 
 	/* Set default target (drop) */
 	start->target = NETCONF_DROP;
@@ -956,7 +952,7 @@ get_trf_mgmt_dwm(char *prefix, int which, netconf_trmgmt_t *trm_dwm)
 	nvram_ret = nvram_get(name);
 	if (strlen(nvram_ret) >= sizeof(value))
 		return FALSE;
-	strncpy(value, nvram_ret, sizeof(value)); /* copy including trailing NULL */
+	strlcpy(value, nvram_ret, sizeof(value));
 
 	/* Parse dscp */
 	prio = value;
@@ -1009,8 +1005,7 @@ get_trf_mgmt_port(char *prefix, int which, netconf_trmgmt_t *trm)
 	nvram_ptr =  nvram_get(name);
 	if (strlen(nvram_ptr) >= sizeof(value))
 		return FALSE;
-	strncpy(value, nvram_ptr, sizeof(value) - 1);
-	value[sizeof(value) - 1] = '\0';
+	strlcpy(value, nvram_ptr, sizeof(value));
 
 	/* Parse protocol */
 	sport = value;
@@ -1193,55 +1188,52 @@ del_trf_mgmt_port(char *prefix, int which)
  * when auth is "psk":
  *	wl_wds<N>=mac,role,crypto,auth,ssid,passphrase
  */
-bool
-get_wds_wsec(int unit, int which, char *mac, char *role,
-             char *crypto, char *auth, ...)
+static bool
+copy_wds_field(char *dst, size_t dstlen, const char *src)
 {
-	char name[] = "wlXXXXXXX_wdsXXXXXXX", value[1000], *next;
+	if (!dst || !dstlen || !src)
+		return FALSE;
+
+	return (strlcpy(dst, src, dstlen) < dstlen);
+}
+
+bool
+get_wds_wsec(int unit, int which,
+             char *mac, size_t maclen, char *role, size_t rolelen,
+             char *crypto, size_t cryptolen, char *auth, size_t authlen,
+             char *ssid, size_t ssidlen, char *passphrase, size_t passphraselen)
+{
+	char name[] = "wlXXXXXXX_wdsXXXXXXX", value[1000], *next, *field;
 
 	snprintf(name, sizeof(name), "wl%d_wds%d", unit, which);
-	strncpy(value, nvram_safe_get(name), sizeof(value) - 1);
-	value[sizeof(value) - 1] = '\0';
+	strlcpy(value, nvram_safe_get(name), sizeof(value));
 	next = value;
 
-	/* separate mac */
-	strcpy(mac, strsep(&next, ","));
-	if (!next)
+	field = strsep(&next, ",");
+	if (!copy_wds_field(mac, maclen, field) || !next)
 		return FALSE;
 
-	/* separate role */
-	strcpy(role, strsep(&next, ","));
-	if (!next)
+	field = strsep(&next, ",");
+	if (!copy_wds_field(role, rolelen, field) || !next)
 		return FALSE;
 
-	/* separate crypto */
-	strcpy(crypto, strsep(&next, ","));
-	if (!next)
+	field = strsep(&next, ",");
+	if (!copy_wds_field(crypto, cryptolen, field) || !next)
 		return FALSE;
 
-	/* separate auth */
-	strcpy(auth, strsep(&next, ","));
-	if (!next)
+	field = strsep(&next, ",");
+	if (!copy_wds_field(auth, authlen, field) || !next)
 		return FALSE;
 
 	if (!strcmp(auth, "psk")) {
-		va_list va;
+		field = strsep(&next, ",");
+		if (!copy_wds_field(ssid, ssidlen, field) || !next)
+			return FALSE;
 
-		va_start(va, auth);
+		if (!copy_wds_field(passphrase, passphraselen, next))
+			return FALSE;
 
-		/* separate ssid */
-		strcpy(va_arg(va, char *), strsep(&next, ","));
-		if (!next)
-			goto fail;
-
-		/* separate passphrase */
-		strcpy(va_arg(va, char *), next);
-
-		va_end(va);
 		return TRUE;
-fail:
-		va_end(va);
-		return FALSE;
 	}
 
 	return FALSE;
@@ -1526,7 +1518,7 @@ convert_autofw_port(void)
 		if (strlen(nvram_get_ptr) >= sizeof(value))
 			goto fail;
 		else
-			strncpy(value, nvram_get_ptr, sizeof(value));
+			strlcpy(value, nvram_get_ptr, sizeof(value));
 
 		/* Check for outbound port specification */
 		out_start = value;
@@ -1617,8 +1609,7 @@ convert_autofw_port(void)
 
 		/* Parse description */
 		if (desc) {
-			strncpy(app.desc, desc, sizeof(app.desc) - 1);
-			app.desc[sizeof(app.desc) - 1] = '\0';
+			strlcpy(app.desc, desc, sizeof(app.desc));
 		}
 
 		/* Set interface name (match packets entering LAN interface) */
@@ -1626,7 +1617,7 @@ convert_autofw_port(void)
 		if (strlen(nvram_get_ptr) >= sizeof(app.match.in.name))
 			goto fail;
 		else
-			strncpy(app.match.in.name, nvram_get_ptr, sizeof(app.match.in.name));
+			strlcpy(app.match.in.name, nvram_get_ptr, sizeof(app.match.in.name));
 
 		/* Set LAN source port range (match packets from any source port) */
 		app.match.src.ports[1] = htons(0xffff);
@@ -1748,7 +1739,7 @@ convert_wsec(void)
 	int i;
 
 	for (i = 0; i < MAX_NVPARSE; i ++) {
-		sprintf(prefix, "wl%d_", i);
+		snprintf(prefix, sizeof(prefix), "wl%d_", i);
 		wep = nvram_get(strlcat_r(prefix, "wep", tmp, sizeof(tmp)));
 		if (!wep)
 			continue;

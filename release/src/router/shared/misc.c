@@ -193,12 +193,15 @@ char *bridge_nvram_get(unsigned int bridge, const char *suffix, char *key, const
  * @param iWan_unit  WAN unit number; 1 maps to "wan", 2..MWAN_MAX to "wanN"
  * @param sPrefix    destination buffer; must be large enough for "wanN"
  */
-void get_wan_prefix(int iWan_unit, char *sPrefix)
+void get_wan_prefix(int iWan_unit, char *sPrefix, size_t prefix_size)
 {
+	if (!sPrefix || !prefix_size)
+		return;
+
 	if ((iWan_unit > 1) && (iWan_unit <= MWAN_MAX))
-		sprintf(sPrefix, "wan%d", iWan_unit);
+		snprintf(sPrefix, prefix_size, "wan%d", iWan_unit);
 	else
-		strcpy(sPrefix, "wan");
+		strlcpy(sPrefix, "wan", prefix_size);
 }
 
 /*
@@ -213,7 +216,7 @@ static void get_wan_nvram_key(int wan_unit, const char *suffix, char *key, const
 {
 	char prefix[8];
 
-	get_wan_prefix(wan_unit, prefix);
+	get_wan_prefix(wan_unit, prefix, sizeof(prefix));
 	get_prefix_nvram_key(prefix, suffix, key, key_size);
 }
 
@@ -238,7 +241,7 @@ int get_wan_unit(const char *sPrefix)
 	unsigned int i, ret = 1;
 
 	for (i = 1; i <= MWAN_MAX; i++) {
-		get_wan_prefix(i, wanstr);
+		get_wan_prefix(i, wanstr, sizeof(wanstr));
 
 		if (!strcmp(sPrefix, wanstr)) {
 			ret = i;
@@ -259,7 +262,7 @@ int get_wan_unit_with_value(const char *suffix, const char *value)
 		mwan_num = 1;
 
 	for (wan_unit = 1; wan_unit <= mwan_num; ++wan_unit) {
-		get_wan_prefix(wan_unit, tmp);
+		get_wan_prefix(wan_unit, tmp, sizeof(tmp));
 		strlcat(tmp, suffix, sizeof(tmp));
 
 		if (nvram_match(tmp, value))
@@ -699,7 +702,7 @@ int wan_led_off(char *prefix) /* off WAN LED only if no other WAN active */
 		mwan_num = 1;
 
 	for (i = 1; i <= mwan_num; i++) {
-		get_wan_prefix(i, wanstr);
+		get_wan_prefix(i, wanstr, sizeof(wanstr));
 
 		up = 0; /* default is 0 (LED_OFF) */
 		if (!strcmp(prefix, wanstr))
@@ -727,14 +730,12 @@ int wan_led_off(char *prefix) /* off WAN LED only if no other WAN active */
 							int a;		/* port number: 0/1/2/3/4 */
 							char b[16];	/* port state: DOWN/SPEED */
 							int c;		/* port vlan: 1/2/3/4/etc */
-							char d[4];
 							FILE *f = NULL;
 
-							strcpy(d, &ifr.ifr_name[4]); /* trim vlan */
-							int vlannum = atoi(d);
+							int vlannum = atoi(&ifr.ifr_name[4]); /* trim vlan */
 							if ((f = popen("/usr/sbin/robocfg showports", "r")) != NULL) {
 								while (fgets(tmp, sizeof(tmp), f)) {
-									if (sscanf(tmp, "Port %d: %s %*s %*s %*s vlan: %d %*s", &a, b, &c) == 3) {
+									if (sscanf(tmp, "Port %d: %15s %*s %*s %*s vlan: %d %*s", &a, b, &c) == 3) {
 										if ((strncmp(b, "DOWN", 4) == 0) && (c == vlannum)) {
 											logmsg(LOG_DEBUG, "*** %s: state = DOWN for vlan%d", __FUNCTION__, vlannum);
 											up = 0;
@@ -895,16 +896,14 @@ int check_wanup(char *prefix)
 			int a;		/* port number: 0/1/2/3/4 */
 			char b[16];	/* port state: DOWN/SPEED */
 			int c;		/* port vlan: 1/2/3/4/etc */
-			char d[4];
 			FILE *f;
 
-			strcpy(d, &ifr.ifr_name[4]); /* trim vlan */
-			int vlannum = atoi(d);
+			int vlannum = atoi(&ifr.ifr_name[4]); /* trim vlan */
 			logmsg(LOG_DEBUG, "*** %s: %s vlan num: %d", __FUNCTION__, prefix, vlannum);
 
 			if ((f = popen("/usr/sbin/robocfg showports", "r")) != NULL) {
 				while (fgets(tmp, sizeof(tmp), f)) {
-					if (sscanf(tmp, "Port %d: %s %*s %*s %*s vlan: %d %*s", &a, b, &c) == 3) {
+					if (sscanf(tmp, "Port %d: %15s %*s %*s %*s vlan: %d %*s", &a, b, &c) == 3) {
 						if ((strncmp(b, "DOWN", 4) == 0) && (c == vlannum)) {
 							logmsg(LOG_DEBUG, "*** %s: port state = DOWN for vlan%d", __FUNCTION__, vlannum);
 							up = 0;

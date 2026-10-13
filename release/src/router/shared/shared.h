@@ -172,7 +172,7 @@ extern void get_bridge_suffix(unsigned int bridge, char *suffix, const size_t su
 extern void get_bridge_prefix(unsigned int bridge, char *prefix, const size_t prefix_size);
 extern void get_bridge_nvram_key(unsigned int bridge, const char *suffix, char *key, const size_t key_size);
 extern char *bridge_nvram_get(unsigned int bridge, const char *suffix, char *key, const size_t key_size);
-extern void get_wan_prefix(int iWan_unit, char *sPrefix);
+extern void get_wan_prefix(int iWan_unit, char *sPrefix, size_t prefix_size);
 extern char *wan_nvram_get(int wan_unit, const char *suffix, char *key, const size_t key_size);
 extern int get_wan_unit(const char *sPrefix);
 extern int get_wan_unit_with_value(const char *suffix, const char *value);
@@ -662,7 +662,7 @@ extern int is_port(char *str);
 extern char *filter_space(char *str);
 extern char* format_port(char *str);
 extern char* trimstr(char *str);
-extern char* splitpath( char *str, char *pathname, char *filename);
+extern char *splitpath(char *str, char *pathname, size_t pathlen, char *filename, size_t filelen);
 extern int splitport(char *in_ports, char out_port[MAX_PORTS][PORT_SIZE]);
 extern int is_number(char *a);
 extern int isspacex(char c);

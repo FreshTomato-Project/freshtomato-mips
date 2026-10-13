@@ -2,7 +2,7 @@
  *
  * micro_httpd/mini_httpd
  *
- * Copyright © 1999,2000 by Jef Poskanzer <jef@acme.com>.
+ * Copyright Â© 1999,2000 by Jef Poskanzer <jef@acme.com>.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -69,6 +69,7 @@
 #include <sys/signal.h>
 #include <netinet/tcp.h>
 #include <sys/stat.h>
+#include <dirent.h>
 
 #include <wlutils.h>
 #include "tomato.h"
@@ -97,10 +98,13 @@
 #define USER_DEFAULT		"root"
 #define PASS_DEFAULT		"admin"
 
-#define LOGIN_STAMP_PREFIX	"/tmp/httpd/httpd-gui-login-"
-#define LOGIN_LOCK_PATH		"/tmp/httpd/httpd-gui-login.lock"
+#define LOGIN_STAMP_DIR		"/tmp/httpd"
+#define LOGIN_STAMP_NAME	"httpd-gui-login-"
+#define LOGIN_STAMP_PREFIX	LOGIN_STAMP_DIR "/" LOGIN_STAMP_NAME
+#define LOGIN_LOCK_PATH		LOGIN_STAMP_DIR "/httpd-gui-login.lock"
 #define LOGIN_COOKIE_NAME	"tomato_gui_session"
 #define LOGIN_COOKIE_LEN	16
+#define LOGIN_MARKER_MAX_AGE	(24 * 60 * 60)
 
 #define DO_FILE_MAX_BYTES	(10UL * 1024UL * 1024UL)
 #define CFE_MTD_PATH		"/dev/mtd0ro"
@@ -538,6 +542,75 @@ static int login_marker_valid(void)
 	return 1;
 }
 
+/*
+ * Marker files only suppress duplicate "login successful" messages; they
+ * are not an authorization boundary. Browser session cookies disappear
+ * without an explicit GUI logout, so their zero-length marker files can
+ * otherwise accumulate for the entire router uptime.
+ *
+ * Caller holds LOGIN_LOCK_PATH while this runs.
+ */
+static int login_marker_name_ok(const char *name)
+{
+	const char *p;
+	size_t prefix_len;
+	size_t hash_len;
+
+	if (name == NULL)
+		return 0;
+
+	prefix_len = strlen(LOGIN_STAMP_NAME);
+	if (strncmp(name, LOGIN_STAMP_NAME, prefix_len) != 0)
+		return 0;
+
+	p = name + prefix_len;
+	hash_len = 0;
+	while (login_cookie_char(p[hash_len]))
+		hash_len++;
+
+	if ((hash_len < 8) || (hash_len > (sizeof(unsigned long) * 2)))
+		return 0;
+
+	return (p[hash_len] == '\0');
+}
+
+static void login_marker_gc(void)
+{
+	DIR *dir;
+	struct dirent *de;
+	struct stat st;
+	char path[96];
+	time_t now;
+	int n;
+
+	now = time(NULL);
+	if (now == (time_t)-1)
+		return;
+
+	dir = opendir(LOGIN_STAMP_DIR);
+	if (dir == NULL)
+		return;
+
+	while ((de = readdir(dir)) != NULL) {
+		if (!login_marker_name_ok(de->d_name))
+			continue;
+
+		n = snprintf(path, sizeof(path), "%s/%s", LOGIN_STAMP_DIR, de->d_name);
+		if ((n < 0) || ((size_t)n >= sizeof(path)))
+			continue;
+
+		if ((lstat(path, &st) != 0) || (!S_ISREG(st.st_mode)))
+			continue;
+
+		if ((now >= st.st_mtime) &&
+		    ((unsigned long)(now - st.st_mtime) >= LOGIN_MARKER_MAX_AGE))
+			unlink(path);
+	}
+
+	closedir(dir);
+}
+
+
 static void login_session_remove(void)
 {
 	char path[96];
@@ -571,6 +644,12 @@ static void login_success_log_once(void)
 		return;
 
 	if (!login_marker_valid()) {
+		/*
+		 * New marker creation is the natural GC trigger: no directory scan
+		 * is added to ordinary requests from an already-known GUI session.
+		 */
+		login_marker_gc();
+
 		memset(token, 0, sizeof(token));
 		login_new_token(token, sizeof(token));
 
@@ -1240,6 +1319,8 @@ static void add_listen_socket(const char *addr, int server_port, int do_ipv6, in
 #define HTTPD_FAMILY AF_INET
 #endif
 
+	memset(&sai_stor, 0, sizeof(sai_stor));
+
 	if (listeners.count >= HTTP_MAX_LISTENERS) {
 		logmsg(LOG_ERR, "number of listeners exceeded the max allowed (%d)", HTTP_MAX_LISTENERS);
 		return;
@@ -1492,9 +1573,9 @@ int main(int argc, char **argv)
 				/* [addr:]port */
 				if ((port = strrchr(optarg, ':')) != NULL) {
 					if ((optarg[0] == '[') && (port > optarg) && (port[-1] == ']'))
-						memcpy(bind, optarg + 1, MIN(sizeof(bind), (unsigned int) (port - optarg) - 2));
+						memcpy(bind, optarg + 1, MIN(sizeof(bind) - 1, (unsigned int) (port - optarg) - 2));
 					else
-						memcpy(bind, optarg, MIN(sizeof(bind), (unsigned int) (port - optarg)));
+						memcpy(bind, optarg, MIN(sizeof(bind) - 1, (unsigned int) (port - optarg)));
 					port++;
 				}
 				else

@@ -178,8 +178,8 @@ wlg.dataToView = function(data) {
 	else
 		ifname = wl_display_ifname(uidx);
 
-	return ([ifname,(data[1] == 1) ? '&#x2b50' : '',
-	                 data[2] || '<small><i>(unset)<\/i><\/small>',
+	return ([escapeHTML(''+ifname),(data[1] == 1) ? '&#x2b50' : '',
+	                 data[2] ? escapeHTML(''+data[2]) : '<small><i>(unset)<\/i><\/small>',
 	                 wmo[data[3]] || '<small><i>(unset)<\/i><\/small>',
 	                 bridgeNames[data[4]],
 	                 macmode[data[5]] || macmode[nvram['wl'+data[0].toString()+'_macmode']]
@@ -454,7 +454,7 @@ function do_pre_submit_form(fom) {
 			if (vif >= 0) {
 				for (var i = 0; i < elem.length ; ++i) {
 					if (elem[i].name.indexOf('wl'+u) == 0)
-						s += 'nvram set '+elem[i].name+'="'+elem[i].value+'"\n';
+						s += 'nvram set '+elem[i].name+'="'+elem[i].value.replace(/["\\$`]/g, '\\$&')+'"\n';
 				}
 			}
 /* REMOVE-BEGIN

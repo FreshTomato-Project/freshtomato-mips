@@ -606,7 +606,7 @@ static int get_scan_results(int idx, int unit, int subunit, void *param)
 	struct bss_ie_hdr *ie;
 	int r, retry;
 	int chan_bw;
-	char *c, ssid_buffer[36];
+	char *ssid_js;
 #ifdef CONFIG_BCMWL6
 	int chanspec = 0, ctr_channel = 0;
 #endif
@@ -656,8 +656,8 @@ static int get_scan_results(int idx, int unit, int subunit, void *param)
 	bssi = &results->bss_info[0];
 	for (i = 0; i < results->count; ++i) {
 
-		/* check SSID len and limit to 32 */
-		if (bssi->SSID_len > 32/* || bssi->SSID_len == 0 */) {
+		/* check SSID length against the 802.11 limit */
+		if (bssi->SSID_len > MAX_SSID_LEN/* || bssi->SSID_len == 0 */) {
 			bssi = (wl_bss_info_t*)((uint8*)bssi + bssi->length); /* next one! */
 			continue;
 		}
@@ -666,7 +666,7 @@ static int get_scan_results(int idx, int unit, int subunit, void *param)
 		snprintf(macstr, sizeof(macstr), "%02X:%02X:%02X:%02X:%02X:%02X", (unsigned char)bssidp[0], (unsigned char)bssidp[1], (unsigned char)bssidp[2], (unsigned char)bssidp[3], (unsigned char)bssidp[4], (unsigned char)bssidp[5]);
 
 		strlcpy(apinfos[ap_count].BSSID, macstr, sizeof(apinfos[ap_count].BSSID));
-		memset(apinfos[ap_count].SSID, 0x0, 33);
+		memset(apinfos[ap_count].SSID, 0, sizeof(apinfos[ap_count].SSID));
 		memcpy(apinfos[ap_count].SSID, bssi->SSID, bssi->SSID_len);
 		apinfos[ap_count].channel = (uint8)(bssi->chanspec & WL_CHANSPEC_CHAN_MASK);
 
@@ -798,21 +798,18 @@ next_info:
 			chan_bw = 10;
 #endif
 
-		c = NULL;  /* reset */
-		/* check SSID for single quote (avoid breaking GUI wireless survey) */
-		if ((c = strchr(apinfos[i].SSID, '\'')) != NULL) {
-			int len_first_part = strlen(apinfos[i].SSID) - strlen(c);
+		/*
+		 * Scan results are returned as JavaScript and evaluated by the GUI.
+		 * Escape the complete SSID instead of trying to special-case a single
+		 * quote; SSIDs may contain quotes, backslashes and control characters.
+		 */
+		ssid_js = js_string(apinfos[i].SSID);
 
-			memset(ssid_buffer, 0, sizeof(ssid_buffer)); /* reset */
-			strlcpy(ssid_buffer, apinfos[i].SSID, len_first_part + 1); /* copy first part */
-			strlcat(ssid_buffer, "\\", sizeof(ssid_buffer)); /* add backslash */
-			strlcat(ssid_buffer, apinfos[i].SSID + len_first_part, sizeof(ssid_buffer));
-		}
-		
 		/* note: provide/use control channel and not the actual channel because we use it for wireless survey and scan button at basic-network.asp */
 		web_printf("%c['%s','%s',%d,%d,%d,%d,", rp->comma,
-		           apinfos[i].BSSID, (c == NULL) ? apinfos[i].SSID : ssid_buffer, apinfos_ext[i].RSSI, apinfos[i].ctl_ch,
+		           apinfos[i].BSSID, ssid_js ? ssid_js : "", apinfos_ext[i].RSSI, apinfos[i].ctl_ch,
 		           chan_bw, apinfos[i].RSSI_Quality);
+		free(ssid_js);
 		rp->comma = ',';
 
 		if ((apinfos[i].NetworkType == Ndis802_11FH) || (apinfos[i].NetworkType == Ndis802_11DS))

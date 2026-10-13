@@ -24,6 +24,7 @@
 #define LOGMSG_NVDEBUG		"ftpd_debug"
 
 
+
 static char *get_full_storage_path(char *val)
 {
 	static char buf[128];
@@ -294,6 +295,11 @@ void start_ftpd(int force)
 				continue;
 			if ((!user) || (!pass))
 				continue;
+
+			if (!str_isalnum_extra(user, "_-", 1, 0) || !strcmp(user, "root") || !strcmp(user, "admin")) {
+				logmsg(LOG_WARNING, "FTP: ignoring invalid user name");
+				continue;
+			}
 
 			if ((i == 3) || (!root_dir) || (!(*root_dir)))
 				root_dir = nvram_safe_get("ftp_pubroot");

@@ -225,12 +225,16 @@ static int _f_read_alloc(const char *path, char **buffer, int max, int z)
 		if ((n = f_size(path)) != (unsigned long)-1) {
 			if (n < (unsigned int) max) max = n;
 			if ((!z) && (max == 0)) return 0;
-			if ((*buffer = malloc(max + z)) != NULL) {
+			if ((z < 0) || (max > INT_MAX - z))
+				return -1;
+
+			if ((*buffer = malloc((size_t)max + (size_t)z)) != NULL) {
 				if ((max = f_read(path, *buffer, max)) >= 0) {
 					if (z) *(*buffer + max) = 0;
 					return max;
 				}
-				free(buffer);
+				free(*buffer);
+				*buffer = NULL;
 			}
 		}
 	}
@@ -274,7 +278,13 @@ int file_lock(char *tag)
 	int lockfd = -1;
 	pid_t lockpid;
 
-	sprintf(fn, "/var/lock/%s.lock", tag);
+	{
+		int n;
+
+		n = snprintf(fn, sizeof(fn), "/var/lock/%s.lock", tag);
+		if ((n < 0) || ((size_t)n >= sizeof(fn)))
+			goto lock_error;
+	}
 	if ((lockfd = open(fn, O_CREAT | O_RDWR, 0666)) < 0)
 		goto lock_error;
 

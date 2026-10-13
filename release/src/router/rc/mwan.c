@@ -83,7 +83,7 @@ int get_sta_wan_prefix(char *sPrefix, const size_t buf_sz)
 
 	for (wan_unit = 1; wan_unit <= mwan_num; ++wan_unit) {
 		memset(prefix, 0, sizeof(prefix));
-		get_wan_prefix(wan_unit, prefix);
+		get_wan_prefix(wan_unit, prefix, sizeof(prefix));
 
 		if (*wan_nvram_get(wan_unit, "sta", tmp, sizeof(tmp))) {
 			found = 1;
@@ -313,7 +313,7 @@ void mwan_state_files(void)
 
 	for (wan_unit = 1; wan_unit <= mwan_num; ++wan_unit) {
 		memset(prefix, 0, sizeof(prefix));
-		get_wan_prefix(wan_unit, prefix);
+		get_wan_prefix(wan_unit, prefix, sizeof(prefix));
 
 		snprintf(tmp, sizeof(tmp), "/var/lib/misc/%s_state", prefix);
 		if ((f = fopen(tmp, "r")) == NULL) {
@@ -344,7 +344,7 @@ void mwan_status_update(void)
 
 	for (wan_unit = 1; wan_unit <= mwan_num; ++wan_unit) {
 		memset(prefix, 0, sizeof(prefix));
-		get_wan_prefix(wan_unit, prefix);
+		get_wan_prefix(wan_unit, prefix, sizeof(prefix));
 		get_wan_info(prefix);
 		if (check_wanup(prefix)) {
 			if (wan_info.wan_weight > 0)
@@ -368,7 +368,7 @@ void mwan_status_update(void)
 		for (wan_unit = 1; wan_unit <= mwan_num; ++wan_unit) {
 			if (mwan_curr[wan_unit - 1] == '1') {
 				memset(prefix, 0, sizeof(prefix));
-				get_wan_prefix(wan_unit, prefix);
+				get_wan_prefix(wan_unit, prefix, sizeof(prefix));
 				get_wan_info(prefix);
 				if (wan_info.wan_weight == 0) {
 					if (mwan_last[wan_unit - 1] != '2')
@@ -416,7 +416,7 @@ void mwan_load_balance(void)
 	lb_argv[argc++] = "global";
 
 	for (wan_unit = 1; wan_unit <= mwan_num; ++wan_unit) {
-		get_wan_prefix(wan_unit, prefix);
+		get_wan_prefix(wan_unit, prefix, sizeof(prefix));
 		get_wan_info(prefix);
 		proto = get_wanx_proto(prefix);
 		get_wan_ip(proto, buf, sizeof(buf));
@@ -463,7 +463,7 @@ void mwan_load_balance(void)
 	else {
 		wan_default = 1; /* first assume that main wan is WAN0 */
 		for (wan_unit = 1; wan_unit <= mwan_num; ++wan_unit) {
-			get_wan_prefix(wan_unit, prefix);
+			get_wan_prefix(wan_unit, prefix, sizeof(prefix));
 			get_wan_info(prefix);
 
 			if (wan_unit == 1) {
@@ -475,7 +475,7 @@ void mwan_load_balance(void)
 			}
 		}
 
-		get_wan_prefix(wan_default, prefix);
+		get_wan_prefix(wan_default, prefix, sizeof(prefix));
 		get_wan_info(prefix);
 		proto = get_wanx_proto(prefix);
 
@@ -537,7 +537,42 @@ int mwan_route_main(int argc, char **argv)
 		mwan_status_update();
 
 		if (strcmp(mwan_last, mwan_curr)) {
+			char prefix[16];
+
 			logmsg(LOG_WARNING, "Multiwan status has changed, last_status=%s, now_status=%s, Update multiwan policy", mwan_last, mwan_curr);
+
+			/*
+			 * Only a transition between healthy and unhealthy needs the
+			 * per-WAN policy table and marking chain changed. Transitions
+			 * between load-balance ('2') and standby/failover ('1') keep
+			 * the WAN reachable and do not require PBR changes.
+			 */
+			for (i = 1; i <= (unsigned int)mwan_num; ++i) {
+				int was_up = (mwan_last[i - 1] != '0');
+				int now_up = (mwan_curr[i - 1] != '0');
+
+				if (was_up == now_up)
+					continue;
+
+				get_wan_prefix((int)i, prefix, sizeof(prefix));
+
+				if (now_up) {
+					/* Install routing first, then allow new marks. */
+					mwan_table_add(prefix);
+					mwan_pbr_update((int)i, 1);
+				}
+				else {
+					/*
+					 * Stop assigning NEW connections to this WAN before
+					 * withdrawing its policy routing table. This avoids a
+					 * window where a fresh connmark can point at a table that
+					 * has already been removed.
+					 */
+					mwan_pbr_update((int)i, 0);
+					mwan_table_del(prefix);
+				}
+			}
+
 			mwan_load_balance();
 
 			stop_dnsmasq();

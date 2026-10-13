@@ -1358,7 +1358,7 @@ int wl_sta_prepare(void)
 	mwan_num = mwan_active_num();
 
 	for (wan_unit = 1; wan_unit <= mwan_num; ++wan_unit) {
-		get_wan_prefix(wan_unit, wan_prefix);
+		get_wan_prefix(wan_unit, wan_prefix, sizeof(wan_prefix));
 
 		store_wan_if_to_nvram(wan_prefix); /* prepare wan setup very early now! */
 
@@ -1955,7 +1955,7 @@ void do_static_routes(int add)
 	free(buf);
 
 	for (i = 1; i <= mwan_num; i++) {
-		get_wan_prefix(i, name);
+		get_wan_prefix(i, name, sizeof(name));
 		proto = get_wanx_proto(name);
 		if ((proto != WP_PPPOE) && (proto != WP_DHCP) && (proto != WP_STATIC))
 			continue;
@@ -2127,6 +2127,9 @@ static int check_wl_client(char *ifname, int unit, int subunit)
 	if ((mlist = malloc(mlsize)) != NULL) {
 		mlist->count = WL_MAX_ASSOC;
 		if (wl_ioctl(ifname, WLC_GET_ASSOCLIST, mlist, mlsize) == 0) {
+			if (mlist->count > WL_MAX_ASSOC)
+				mlist->count = WL_MAX_ASSOC;
+
 			for (i = 0; i < mlist->count; ++i) {
 				if (is_same_addr(&mlist->ea[i], &bi->BSSID)) {
 					associated = 1;
@@ -2140,6 +2143,9 @@ static int check_wl_client(char *ifname, int unit, int subunit)
 			mlist->count = WL_MAX_ASSOC;
 			strlcpy((char*)mlist, "autho_sta_list", mlsize);
 			if (wl_ioctl(ifname, WLC_GET_VAR, mlist, mlsize) == 0) {
+				if (mlist->count > WL_MAX_ASSOC)
+					mlist->count = WL_MAX_ASSOC;
+
 				for (i = 0; i < mlist->count; ++i) {
 					if (is_same_addr(&mlist->ea[i], &bi->BSSID)) {
 						authorized = 1;

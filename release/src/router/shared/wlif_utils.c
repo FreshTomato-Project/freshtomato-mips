@@ -204,7 +204,7 @@ get_wlmacstr_by_unit(char *unit)
 	char tmptr[] = "wlXXX.XX_hwaddr";
 	char *macaddr;
 
-	sprintf(tmptr, "wl%s_hwaddr", unit);
+	snprintf(tmptr, sizeof(tmptr), "wl%s_hwaddr", unit);
 
 	macaddr = nvram_get(tmptr);
 
@@ -231,7 +231,7 @@ get_lan_mac(unsigned char *mac)
 }
 
 int
-get_wlname_by_mac(unsigned char *mac, char *wlname)
+get_wlname_by_mac(unsigned char *mac, char *wlname, size_t wlname_len)
 {
 	char eabuf[18];
 	char tmptr[] = "wlXXX.XX_hwaddr";
@@ -245,8 +245,8 @@ get_wlname_by_mac(unsigned char *mac, char *wlname)
 #else
 	for (i = 0; i < WLIFU_MAX_NO_BRIDGE; i++) {
 #endif
-		sprintf(wlname, "wl%d", i);
-		sprintf(tmptr, "wl%d_hwaddr", i);
+		snprintf(wlname, wlname_len, "wl%d", i);
+		snprintf(tmptr, sizeof(tmptr), "wl%d_hwaddr", i);
 		wl_hw = nvram_get(tmptr);
 		if (wl_hw) {
 			if (!strncasecmp(wl_hw, eabuf, sizeof(eabuf)))
@@ -254,8 +254,8 @@ get_wlname_by_mac(unsigned char *mac, char *wlname)
 		}
 
 		for (j = 1; j < WL_MAXBSSCFG; j++) {
-			sprintf(wlname, "wl%d.%d", i, j);
-			sprintf(tmptr, "wl%d.%d_hwaddr", i, j);
+			snprintf(wlname, wlname_len, "wl%d.%d", i, j);
+			snprintf(tmptr, sizeof(tmptr), "wl%d.%d_hwaddr", i, j);
 			wl_hw = nvram_get(tmptr);
 			if (wl_hw) {
 				if (!strncasecmp(wl_hw, eabuf, sizeof(eabuf)))
@@ -364,7 +364,7 @@ get_ifname_by_wlmac(unsigned char *mac, char *name)
 	  */
 	if (name && !strncmp(name, "wl", 2))
 		snprintf(nv_name, sizeof(nv_name), "%s", name);
-	else if (get_wlname_by_mac(mac, nv_name))
+	else if (get_wlname_by_mac(mac, nv_name, sizeof(nv_name)))
 		return 0;
 
 	if (nvifname_to_osifname(nv_name, os_name, sizeof(os_name)) < 0)
@@ -443,7 +443,7 @@ get_wsec(wsec_info_t *info, unsigned char *mac, char *osifname)
 		return WLIFU_ERR_INVALID_PARAMETER;
 
 	if (nvifname_to_osifname(osifname, os_name, sizeof(os_name))) {
-		if (get_wlname_by_mac(mac, nv_name))
+		if (get_wlname_by_mac(mac, nv_name, sizeof(nv_name)))
 			return WLIFU_ERR_INVALID_PARAMETER;
 		else if (nvifname_to_osifname(nv_name, os_name, sizeof(os_name)))
 			return WLIFU_ERR_INVALID_PARAMETER;
@@ -473,7 +473,7 @@ get_wsec(wsec_info_t *info, unsigned char *mac, char *osifname)
 	else if (osifname_to_nvifname(os_name, wl_prefix, sizeof(wl_prefix)))
 		return WLIFU_ERR_INVALID_PARAMETER;
 
-	strcat(wl_prefix, "_");
+	strlcat(wl_prefix, "_", sizeof(wl_prefix));
 	memset(info, 0, sizeof(wsec_info_t));
 
 
@@ -489,7 +489,7 @@ get_wsec(wsec_info_t *info, unsigned char *mac, char *osifname)
 	else if (osifname_to_nvifname(os_name, wl_prefix, sizeof(wl_prefix)))
 		return WLIFU_ERR_INVALID_PARAMETER;
 
-	strcat(wl_prefix, "_");
+	strlcat(wl_prefix, "_", sizeof(wl_prefix));
 	memset(info, 0, sizeof(wsec_info_t));
 	/* if dwds is enabled then dont configure the wds interface */
 	dwds = atoi(nvram_safe_get(strlcat_r(wl_prefix, "dwds", comb, sizeof(comb))));
@@ -506,7 +506,7 @@ get_wsec(wsec_info_t *info, unsigned char *mac, char *osifname)
 	else if (osifname_to_nvifname(os_name, wl_prefix, sizeof(wl_prefix)))
 		return WLIFU_ERR_INVALID_PARAMETER;
 
-	strcat(wl_prefix, "_");
+	strlcat(wl_prefix, "_", sizeof(wl_prefix));
 	memset(info, 0, sizeof(wsec_info_t));
 
 
@@ -524,8 +524,13 @@ get_wsec(wsec_info_t *info, unsigned char *mac, char *osifname)
 			char macaddr[18];
 			uint8 ea[ETHER_ADDR_LEN];
 
-			if (get_wds_wsec(unit, i, macaddr, wds_role, wds_crypto, wds_akms, wds_ssid,
-			                 wds_psk) &&
+			if (get_wds_wsec(unit, i,
+			                 macaddr, sizeof(macaddr),
+			                 wds_role, sizeof(wds_role),
+			                 wds_crypto, sizeof(wds_crypto),
+			                 wds_akms, sizeof(wds_akms),
+			                 wds_ssid, sizeof(wds_ssid),
+			                 wds_psk, sizeof(wds_psk)) &&
 			    ((ether_atoe(macaddr, ea) && !bcmp(ea, remote, ETHER_ADDR_LEN)) ||
 			     ((mac[0] == '*') && (mac[1] == '\0')))) {
 			     /* found wds settings */
@@ -539,15 +544,15 @@ get_wsec(wsec_info_t *info, unsigned char *mac, char *osifname)
 	/* interface unit */
 	info->unit = unit;
 	/* interface os name */
-	strcpy(info->osifname, os_name);
+	strlcpy(info->osifname, os_name, sizeof(info->osifname));
 	/* interface address */
 	memcpy(info->ea, mac, ETHER_ADDR_LEN);
 	/* ssid */
 	if (wds && wds_wsec)
-		strncpy(info->ssid, wds_ssid, MAX_SSID_LEN);
+		strlcpy(info->ssid, wds_ssid, sizeof(info->ssid));
 	else {
 		value = nvram_safe_get(strlcat_r(wl_prefix, "ssid", comb, sizeof(comb)));
-		strncpy(info->ssid, value, MAX_SSID_LEN);
+		strlcpy(info->ssid, value, sizeof(info->ssid));
 	}
 	/* auth */
 	if (nvram_match(strlcat_r(wl_prefix, "auth", comb, sizeof(comb)), "1"))
@@ -623,7 +628,7 @@ get_wsec(wsec_info_t *info, unsigned char *mac, char *osifname)
 
 		/* did not find WDS link configuration, use wireless' */
 		if (!wds_wsec)
-			strcpy(wds_role, "auto");
+			strlcpy(wds_role, "auto", sizeof(wds_role));
 
 		/* get right role */
 		if (!strcmp(wds_role, "sup"))
@@ -633,7 +638,7 @@ get_wsec(wsec_info_t *info, unsigned char *mac, char *osifname)
 		else /* if (!strcmp(wds_role, "auto")) */
 			lrole = WL_WDS_WPA_ROLE_AUTO;
 
-		strcpy(buf, "wds_wpa_role");
+		strlcpy(buf, "wds_wpa_role", sizeof(buf));
 		ptr = (unsigned char *)buf + strlen(buf) + 1;
 		bcopy(info->remote, ptr, ETHER_ADDR_LEN);
 		ptr[ETHER_ADDR_LEN] = lrole;
@@ -659,13 +664,11 @@ get_wsec(wsec_info_t *info, unsigned char *mac, char *osifname)
 	/* user-supplied psk passphrase */
 	if (CHECK_PSK(info->akm)) {
 		if (wds && wds_wsec) {
-			strncpy((char *)info->psk, wds_psk, MAX_USER_KEY_LEN);
-			info->psk[MAX_USER_KEY_LEN] = 0;
+			strlcpy((char *)info->psk, wds_psk, sizeof(info->psk));
 		}
 		else {
 			value = nvram_safe_get(strlcat_r(wl_prefix, "wpa_psk", comb, sizeof(comb)));
-			strncpy((char *)info->psk, value, MAX_USER_KEY_LEN);
-			info->psk[MAX_USER_KEY_LEN] = 0;
+			strlcpy((char *)info->psk, value, sizeof(info->psk));
 		}
 	}
 	/* user-supplied radius server secret */
@@ -685,7 +688,7 @@ get_wsec(wsec_info_t *info, unsigned char *mac, char *osifname)
 			value = nvram_safe_get(strlcat_r(wl_prefix, "key", comb, sizeof(comb)));
 			info->wep_index = (int)strtoul(value, NULL, 0);
 			/* key */
-			sprintf(key, "key%s", nvram_safe_get(strlcat_r(wl_prefix, "key", comb, sizeof(comb))));
+			snprintf(key, sizeof(key), "key%s", nvram_safe_get(strlcat_r(wl_prefix, "key", comb, sizeof(comb))));
 			info->wep_key = nvram_safe_get(strlcat_r(wl_prefix, key, comb, sizeof(comb)));
 		}
 		/* radius server host/port */

@@ -36,6 +36,9 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <syslog.h>
+#if defined(TCONFIG_TINC) || defined(TCONFIG_FTP) || defined(TCONFIG_PPTPD) || defined(TCONFIG_SAMBASRV)
+ #include <ctype.h>
+#endif
 #include <wlioctl.h>
 #if 0
  #include <sys/stat.h>
@@ -839,6 +842,30 @@ int get_ifname_unit(const char *ifname, int *unit, int *subunit)
 /* In the space-separated/null-terminated list(haystack), try to
  * locate the string "needle"
  */
+#if defined(TCONFIG_TINC) || defined(TCONFIG_FTP) || defined(TCONFIG_PPTPD) || defined(TCONFIG_SAMBASRV)
+int str_isalnum_extra(const char *str, const char *extra, size_t minlen, size_t maxlen)
+{
+	const unsigned char *p;
+	size_t len;
+
+	if (!str)
+		return 0;
+
+	len = strlen(str);
+
+	if ((len < minlen) || (maxlen && (len > maxlen)))
+		return 0;
+
+	for (p = (const unsigned char *)str; *p; p++) {
+		if (!isalnum(*p) && (!extra || !strchr(extra, *p)))
+			return 0;
+	}
+
+	return 1;
+}
+#endif /* TCONFIG_TINC || TCONFIG_FTP || TCONFIG_PPTPD || TCONFIG_SAMBASRV */
+
+
 char *find_in_list(const char *haystack, const char *needle)
 {
 	const char *ptr;
@@ -1615,7 +1642,7 @@ int qos_status(void)
 	int i;
 
 	for (i = 1; i <= MWAN_MAX; i++) {
-		get_wan_prefix(i, prefix);
+		get_wan_prefix(i, prefix, sizeof(prefix));
 		if (qos_prefix_status(prefix))
 			return 1;
 	}
@@ -1640,7 +1667,7 @@ unsigned int mwan_active_num(void)
 	unsigned int configured = mwan_configured_num();
 
 	for (i = 1; i <= configured; ++i) {
-		get_wan_prefix(i, prefix);
+		get_wan_prefix(i, prefix, sizeof(prefix));
 
 		if (get_wanx_proto(prefix) == WP_DISABLED)
 			break;
@@ -1705,21 +1732,30 @@ enum flag {
 char *fd2str(int fd)
 {
 	char *buf = NULL;
-	size_t count = 0, n;
+	char *tmp;
+	size_t count = 0;
+	ssize_t n;
 
 	do {
-		buf = realloc(buf, count + 512);
+		tmp = realloc(buf, count + 512);
+		if (tmp == NULL) {
+			free(buf);
+			close(fd);
+			return NULL;
+		}
+		buf = tmp;
+
 		n = read(fd, buf + count, 512);
 		if (n < 0) {
 			free(buf);
-			buf = NULL;
+			close(fd);
+			return NULL;
 		}
-		count += n;
+		count += (size_t)n;
 	} while (n == 512);
 
 	close(fd);
-	if (buf)
-		buf[count] = '\0';
+	buf[count] = '\0';
 
 	return buf;
 }
@@ -1883,7 +1919,7 @@ char *get_bridged_interfaces(char *bridge_name)
 	ifnames = nvram_get(bridge);
 
 	if (ifnames)
-		strncpy(interfaces, ifnames, sizeof(interfaces));
+		strlcpy(interfaces, ifnames, sizeof(interfaces));
 	else
 		return NULL;
 
