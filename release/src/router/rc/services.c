@@ -522,6 +522,10 @@ void start_stubby(void)
 		if ((port < 0) || (port > 65535))
 			continue;
 
+		/* quoted/plain YAML fields must not escape into new directives */
+		if ((*hostname && strpbrk(hostname, "\"\\\r\n")) || (*spkipin && strpbrk(spkipin, "\r\n")))
+			continue;
+
 		/* add server */
 		fprintf(fp, "  - address_data: %s\n", server);
 		if (port)
@@ -1886,6 +1890,10 @@ void start_ntpd(void)
 	 */
 	if (ntp_updates_int >= 0) { /* -1 = never */
 		ntp_server = nvram_safe_get("ntp_server");
+		if (strpbrk(ntp_server, "\r\n")) {
+			logmsg(LOG_ERR, "ntpd: invalid line break in ntp_server, exiting");
+			return;
+		}
 		servers_len = strlen(ntp_server);
 
 		/* allocating memory dynamically both so we don't waste memory, and in case of unanticipatedly long server name in nvram */

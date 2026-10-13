@@ -258,7 +258,7 @@ int mtd_unlock_erase_main_old(int argc, char *argv[])
 int mtd_unlock_erase_main(int argc, char *argv[])
 #endif
 {
-	char c;
+	int c;
 	char *dev = NULL;
 
 	while ((c = getopt(argc, argv, "d:")) != -1) {
@@ -291,7 +291,7 @@ int mtd_write_main_old(int argc, char *argv[])
 	unsigned long filelen = 0, unit_len;
 	struct sysinfo si;
 	uint32 ofs;
-	char c;
+	int c;
 	char *iname = NULL;
 	char *dev = NULL;
 	char msg_buf[2048];
@@ -487,7 +487,7 @@ int mtd_write_main(int argc, char *argv[])
 	size_t  n;
 	struct sysinfo si;
 	uint32 ofs;
-	char c;
+	int c;
 	int web = 0;
 	int check_only = 0;
 	int crc_ok = 0;
@@ -719,10 +719,15 @@ int mtd_write_main(int argc, char *argv[])
 
 	_dprintf("*** %s: mtd size=%6x, erasesize=%6x\n", __FUNCTION__, mi.size, mi.erasesize);
 
-	total = ROUNDUP(trx.len, mi.erasesize);
-	if (total > mi.size) {
-		error = "File is too big to fit in MTD";
-		goto ERROR;
+	{
+		uint32 rem = trx.len % mi.erasesize;
+		uint32 pad = rem ? (mi.erasesize - rem) : 0;
+
+		if ((trx.len > mi.size) || (pad > mi.size - trx.len)) {
+			error = "File is too big to fit in MTD";
+			goto ERROR;
+		}
+		total = trx.len + pad;
 	}
 
 	sysinfo(&si);
@@ -1096,6 +1101,38 @@ enum {
 	METHOD_POST
 };
 
+static int parse_http_size(const char *s, int base, size_t *value)
+{
+	char *end;
+	unsigned long v;
+
+	if (!s || !value)
+		return -1;
+
+	while (is_blank(*s))
+		s++;
+
+	if (*s == '\0' || *s == '+' || *s == '-')
+		return -1;
+
+	errno = 0;
+	v = strtoul(s, &end, base);
+	if ((errno == ERANGE) || (end == s))
+		return -1;
+
+	while (is_blank(*end))
+		end++;
+
+	if ((*end != '\0') && (*end != '\r') && (*end != '\n') && ((base != 16) || (*end != ';')))
+		return -1;
+
+	if (v > (unsigned long)((size_t)-1))
+		return -1;
+
+	*value = (size_t)v;
+	return 0;
+}
+
 static int wget(int method, const char *server, char *buf, size_t count, off_t offset)
 {
 	char url[PATH_MAX] = { 0 }, *s;
@@ -1105,7 +1142,7 @@ static int wget(int method, const char *server, char *buf, size_t count, off_t o
 	FILE *fp;
 	struct sockaddr_in sin;
 	int chunked = 0;
-	unsigned len = 0;
+	size_t len = 0;
 
 	if (server == NULL || !strcmp(server, "")) {
 		_dprintf("*** %s: wget: null server input\n", __FUNCTION__);
@@ -1184,9 +1221,10 @@ static int wget(int method, const char *server, char *buf, size_t count, off_t o
 		if (*s == '\n')
 			break;
 		if (!strncasecmp(s, "Content-Length:", 15)) {
-			for (s += 15; is_blank(*s); s++);
+			s += 15;
 			chomp(s);
-			len = atoi(s);
+			if (parse_http_size(s, 10, &len) != 0)
+				goto done;
 		}
 		else if (!strncasecmp(s, "Transfer-Encoding:", 18)) {
 			for (s += 18; is_blank(*s); s++);
@@ -1196,10 +1234,13 @@ static int wget(int method, const char *server, char *buf, size_t count, off_t o
 		}
 	}
 
-	if (chunked && fgets(line, sizeof(line), fp))
-		len = strtol(line, NULL, 16);
+	if (chunked) {
+		if (!fgets(line, sizeof(line), fp) || (parse_http_size(line, 16, &len) != 0))
+			goto done;
+	}
 
-	len = (len > count) ? count : len;
+	if (len > count)
+		len = count;
 	len = fread(buf, 1, len, fp);
 
 done:
@@ -1221,7 +1262,7 @@ int http_get(const char *server, char *buf, size_t count, off_t offset)
  * @param       mtd     path to or partition name of MTD device
  * @return      0 on success and errno on failure
  */
-int mtd_write(const char *path, const char *mtd)
+static int mtd_write_internal(const char *path, const char *mtd, int check_only)
 {
 	int mtd_fd = -1;
 	mtd_info_t mtd_info;
@@ -1237,19 +1278,24 @@ int mtd_write(const char *path, const char *mtd)
 	if (model == MODEL_EA6700 || model == MODEL_EA6400 || model == MODEL_EA6350v1 || model == MODEL_EA6350v2) {
 		if (nvram_match("bootpartition", "1")) {
 			mtd = "linux";
-			nvram_set("bootpartition", "0");
-			nvram_commit();
+			if (!check_only) {
+				nvram_set("bootpartition", "0");
+				nvram_commit();
+			}
 		}
 		else {
 			mtd = "linux2";
-			nvram_set("bootpartition", "1");
-			nvram_commit();
+			if (!check_only) {
+				nvram_set("bootpartition", "1");
+				nvram_commit();
+			}
 		}
 	}
 #endif
 	FILE *fp;
 	char *buf = NULL;
 	unsigned long count, len, off;
+	int crc_ok = 0;
 	int ret = -1;
 
 	if ((fp = fopen(path, "r")))
@@ -1263,7 +1309,7 @@ int mtd_write(const char *path, const char *mtd)
 	}
 
 	/* Open MTD device and get sector size */
-	if ((mtd_fd = mtd_open(mtd, O_RDWR)) < 0 || ioctl(mtd_fd, MEMGETINFO, &mtd_info) != 0 || mtd_info.erasesize < sizeof(struct trx_header)) {
+	if ((mtd_fd = mtd_open(mtd, check_only ? O_RDONLY : O_RDWR)) < 0 || ioctl(mtd_fd, MEMGETINFO, &mtd_info) != 0 || mtd_info.erasesize < sizeof(struct trx_header)) {
 		perror(mtd);
 		goto fail;
 	}
@@ -1280,17 +1326,30 @@ int mtd_write(const char *path, const char *mtd)
 	}
 
 	/* Allocate temporary buffer */
-	/* See if we have enough memory to store the whole file */
-	sysinfo(&info);
-	if (info.freeram >= trx.len) {
-		erase_info.length = ROUNDUP(trx.len, mtd_info.erasesize);
-		if (!(buf = malloc(erase_info.length)))
-			erase_info.length = mtd_info.erasesize;
-	}
-	/* fallback to smaller buffer */
-	else {
+	if (check_only) {
+		/* Avoid duplicating the staged image in RAM while validating it. */
 		erase_info.length = mtd_info.erasesize;
-		buf = NULL;
+	}
+	else {
+		/* See if we have enough memory to store the whole file */
+		sysinfo(&info);
+		if (info.freeram >= trx.len) {
+			uint32 rem = trx.len % mtd_info.erasesize;
+			uint32 pad = rem ? (mtd_info.erasesize - rem) : 0;
+
+			if (pad <= mtd_info.size - trx.len)
+				erase_info.length = trx.len + pad;
+			else
+				erase_info.length = mtd_info.erasesize;
+
+			if (!(buf = malloc(erase_info.length)))
+				erase_info.length = mtd_info.erasesize;
+		}
+		/* fallback to smaller buffer */
+		else {
+			erase_info.length = mtd_info.erasesize;
+			buf = NULL;
+		}
 	}
 	if (!buf && (!(buf = malloc(erase_info.length)))) {
 		perror("malloc");
@@ -1323,34 +1382,46 @@ int mtd_write(const char *path, const char *mtd)
 		}
 		/* Update CRC */
 		crc = hndcrc32((uint8 *)&buf[off], count - off, crc);
-		/* Check CRC before writing if possible */
-		if (count == trx.len) {
+		if ((erase_info.start + count) == trx.len) {
 			if (crc != trx.crc32) {
 				fprintf(stderr, "%s: Bad CRC\n", path);
 				goto fail;
 			}
+			crc_ok = 1;
 		}
-		/* Do it */
-		(void) ioctl(mtd_fd, MEMUNLOCK, &erase_info);
-		if (ioctl(mtd_fd, MEMERASE, &erase_info) != 0 || (unsigned long) write(mtd_fd, buf, count) != count) {
-			perror(mtd);
-			goto fail;
+
+		if (!check_only) {
+			/* Do it */
+			(void) ioctl(mtd_fd, MEMUNLOCK, &erase_info);
+			if (ioctl(mtd_fd, MEMERASE, &erase_info) != 0 || (unsigned long) write(mtd_fd, buf, count) != count) {
+				perror(mtd);
+				goto fail;
+			}
 		}
 	}
 
+	if (!crc_ok) {
+		fprintf(stderr, "%s: CRC was not fully validated\n", path);
+		goto fail;
+	}
+
 #ifdef PLC
-	eval("gigle_util restart");
-	nvram_set("plc_pconfig_state", "2");
-	nvram_commit();
+	if (!check_only) {
+		eval("gigle_util restart");
+		nvram_set("plc_pconfig_state", "2");
+		nvram_commit();
+	}
 #endif
 
-	printf("%s: CRC OK - Image successfully flashed\n", mtd);
+	printf("%s: CRC OK - Image successfully %s\n", mtd, check_only ? "verified" : "flashed");
 	ret = 0;
 
 fail:
 	if (buf) {
-		/* Dummy read to ensure chip(s) are out of lock/suspend state */
-		(void) read(mtd_fd, buf, 2);
+		if (!check_only && mtd_fd >= 0) {
+			/* Dummy read to ensure chip(s) are out of lock/suspend state */
+			(void) read(mtd_fd, buf, 2);
+		}
 		free(buf);
 	}
 
@@ -1360,5 +1431,15 @@ fail:
 		fclose(fp);
 
 	return ret;
+}
+
+int mtd_write(const char *path, const char *mtd)
+{
+	return mtd_write_internal(path, mtd, 0);
+}
+
+int mtd_check_image(const char *path, const char *mtd)
+{
+	return mtd_write_internal(path, mtd, 1);
 }
 #endif /* TCONFIG_BCMARM */

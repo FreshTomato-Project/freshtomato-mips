@@ -197,6 +197,14 @@ static void ovpn_setup_watchdog(ovpn_type_t type, const int unit)
 
 		val = getNVRAMVar("vpnc%d_tunchk", unit);
 		ipchk = (val && *val) ? val : nvram_safe_get("wan_checker");
+		{
+			struct in_addr addr;
+
+			if (inet_pton(AF_INET, ipchk, &addr) != 1) {
+				logmsg(LOG_WARNING, "%s: invalid tunnel check address '%s', using 1.0.0.1", __FUNCTION__, ipchk ? ipchk : "");
+				ipchk = "1.0.0.1";
+			}
+		}
 
 		if ((fp = fopen(buffer, "w"))) {
 			fprintf(fp, "#!/bin/sh\n"
@@ -1038,8 +1046,15 @@ void start_ovpn_server(int unit)
 		}
 
 		if (atoi(getNVRAMVar("vpns%d_pdns", unit))) {
-			if (nvram_safe_get("wan_domain")[0] != '\0')
-				fprintf(fp, "push \"dhcp-option DOMAIN %s\"\n", nvram_safe_get("wan_domain"));
+			const char *wan_domain = nvram_safe_get("wan_domain");
+
+			if (wan_domain[0] != '\0') {
+				if (strpbrk(wan_domain, "\"\\\r\n")) {
+					logmsg(LOG_WARNING, "OpenVPN server %d: ignoring unsafe wan_domain", unit);
+				}
+				else
+					fprintf(fp, "push \"dhcp-option DOMAIN %s\"\n", wan_domain);
+			}
 			if ((nvram_safe_get("wan_wins")[0] != '\0' && strcmp(nvram_safe_get("wan_wins"), "0.0.0.0") != 0))
 				fprintf(fp, "push \"dhcp-option WINS %s\"\n", nvram_safe_get("wan_wins"));
 
