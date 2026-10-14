@@ -43,13 +43,35 @@ unsigned long f_size(const char *path) /* 4GB-1   -1 = error */
 
 int f_read(const char *path, void *buffer, int max)
 {
-	int f;
-	int n;
+	int f, n;
+	int total = 0;
 
-	if ((f = open(path, O_RDONLY)) < 0) return -1;
-	n = read(f, buffer, max);
+	if ((max < 0) || (!buffer && max))
+		return -1;
+
+	if ((f = open(path, O_RDONLY)) < 0)
+		return -1;
+
+	while (total < max) {
+		n = read(f, (char *)buffer + total, max - total);
+
+		if (n > 0) {
+			total += n;
+			continue;
+		}
+
+		if (n == 0)
+			break;
+
+		if (errno == EINTR)
+			continue;
+
+		close(f);
+		return -1;
+	}
+
 	close(f);
-	return n;
+	return total;
 }
 
 int f_write(const char *path, const void *buffer, int len, unsigned flags, unsigned cmode)
@@ -129,6 +151,40 @@ int f_write_procsysnet(const char *path, const char *value)
 	snprintf(syspath, sizeof(syspath), "/proc/sys/net/%s", path);
 
 	return f_write_string(syspath, value, 0, 0);
+}
+
+int f_write_quoted(FILE *fp, const char *value, int crlf_mode)
+{
+	const unsigned char *p;
+
+	if (!fp || ((crlf_mode != FWQUOTE_REJECT_CRLF) && (crlf_mode != FWQUOTE_SPACE_CRLF)))
+		return -1;
+
+	if (!value)
+		value = "";
+
+	/* Reject before writing anything so callers never get a partial token. */
+	if ((crlf_mode == FWQUOTE_REJECT_CRLF) && strpbrk(value, "\r\n"))
+		return -1;
+
+	if (fputc('"', fp) == EOF)
+		return -1;
+
+	for (p = (const unsigned char *)value; *p; ++p) {
+		if ((*p == '\\') || (*p == '"')) {
+			if (fputc('\\', fp) == EOF)
+				return -1;
+		}
+
+		if (((*p == '\r') || (*p == '\n')) && (crlf_mode == FWQUOTE_SPACE_CRLF)) {
+			if (fputc(' ', fp) == EOF)
+				return -1;
+		}
+		else if (fputc(*p, fp) == EOF)
+			return -1;
+	}
+
+	return (fputc('"', fp) == EOF) ? -1 : 0;
 }
 
 #if defined(TCONFIG_NGINX) || defined(TCONFIG_BT)

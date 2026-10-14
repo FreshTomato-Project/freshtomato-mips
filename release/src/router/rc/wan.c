@@ -55,19 +55,9 @@
 
 static void pppd_write_quoted(FILE *fp, const char *option, const char *value)
 {
-	const unsigned char *p;
-
-	fprintf(fp, "%s \"", option);
-	for (p = (const unsigned char *)(value ? value : ""); *p; ++p) {
-		if ((*p == '\\') || (*p == '"'))
-			fputc('\\', fp);
-
-		if ((*p == '\r') || (*p == '\n'))
-			fputc(' ', fp);
-		else
-			fputc(*p, fp);
-	}
-	fputs("\"\n", fp);
+	fprintf(fp, "%s ", option);
+	f_write_quoted(fp, value, FWQUOTE_SPACE_CRLF);
+	fputc('\n', fp);
 }
 
 static int config_pppd(int wan_proto, int num, char *prefix)
@@ -968,6 +958,9 @@ void start_wan_if(char *prefix)
 		break;
 	}
 
+	/* Monitor physical carrier for Ethernet DHCP WANs. */
+	start_wanlink(prefix);
+
 	/* Get current WAN hardware address */
 	strlcpy(ifr.ifr_name, wan_ifname, IFNAMSIZ);
 	if (ioctl(sd, SIOCGIFHWADDR, &ifr) == 0)
@@ -1347,6 +1340,7 @@ void stop_wan_if(char *prefix)
 #endif
 
 	/* Kill any WAN client daemons or callbacks */
+	stop_wanlink(prefix);
 	stop_redial(prefix);
 	stop_l2tp(prefix); /* Special case for xl2tpd */
 	stop_ppp(prefix); /* One for all */

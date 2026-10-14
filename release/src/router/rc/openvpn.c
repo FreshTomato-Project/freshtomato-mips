@@ -58,6 +58,22 @@ typedef enum ovpn_type
  * early ACCEPT rules. No -j target is used intentionally: the account match
  * updates counters and packet evaluation continues.
  */
+#ifndef TCONFIG_OPTIMIZE_SIZE_MORE
+static int ovpn_valid_ipv4_route(const char *route)
+{
+	char network[INET_ADDRSTRLEN], netmask[INET_ADDRSTRLEN], extra;
+	struct in_addr addr;
+
+	if (!route || strpbrk(route, "\r\n"))
+		return 0;
+
+	if (sscanf(route, "%15s %15s %c", network, netmask, &extra) != 2)
+		return 0;
+
+	return (inet_pton(AF_INET, network, &addr) == 1) && (inet_pton(AF_INET, netmask, &addr) == 1);
+}
+#endif
+
 static void write_ovpn_cstats_rules(FILE *fp, const char *iface, const char *dir)
 {
 	struct in_addr ipaddr, netmask, network;
@@ -238,34 +254,6 @@ static void ovpn_setup_watchdog(ovpn_type_t type, const int unit)
 		}
 	}
 }
-
-static int ovpn_has_linebreak(const char *value)
-{
-	return value && (strchr(value, '\r') || strchr(value, '\n'));
-}
-
-static int ovpn_write_quoted(FILE *fp, const char *value)
-{
-	const char *p;
-
-	if (!fp || !value || ovpn_has_linebreak(value))
-		return 0;
-
-	if (fputc('"', fp) == EOF)
-		return 0;
-
-	for (p = value; *p; ++p) {
-		if ((*p == '"') || (*p == '\\')) {
-			if (fputc('\\', fp) == EOF)
-				return 0;
-		}
-		if (fputc(*p, fp) == EOF)
-			return 0;
-	}
-
-	return (fputc('"', fp) != EOF);
-}
-
 
 void start_ovpn_client(int unit)
 {
@@ -472,7 +460,7 @@ void start_ovpn_client(int unit)
 
 		if ((nvi = atoi(getNVRAMVar("vpnc%d_tlsvername", unit))) > 0) {
 			fprintf(fp, "verify-x509-name ");
-			if (!ovpn_write_quoted(fp, getNVRAMVar("vpnc%d_cn", unit))) {
+			if (f_write_quoted(fp, getNVRAMVar("vpnc%d_cn", unit), FWQUOTE_REJECT_CRLF) < 0) {
 				logmsg(LOG_ERR, "invalid verify-x509-name value");
 				fclose(fp);
 				stop_ovpn_client(unit);
@@ -549,7 +537,7 @@ void start_ovpn_client(int unit)
 			}
 		}
 		if (userauth) {
-			if (ovpn_has_linebreak(getNVRAMVar("vpnc%d_username", unit)) || ovpn_has_linebreak(getNVRAMVar("vpnc%d_password", unit))) {
+			if (!str_is_single_line(getNVRAMVar("vpnc%d_username", unit)) || !str_is_single_line(getNVRAMVar("vpnc%d_password", unit))) {
 				logmsg(LOG_ERR, "invalid OpenVPN username or password");
 				stop_ovpn_client(unit);
 				return;
@@ -1006,8 +994,14 @@ void start_ovpn_server(int unit)
 						route = chp;
 						logmsg(LOG_DEBUG, "*** %s: CCD: Route: %s", __FUNCTION__, chp);
 						if (strlen(route) > 1) {
-							fprintf(ccd, "iroute %s\n", route);
-							fprintf(fp, "route %s\n", route);
+							if (!ovpn_valid_ipv4_route(route)) {
+								logmsg(LOG_WARNING, "OpenVPN server %d: ignoring invalid CCD route", unit);
+								route = NULL;
+							}
+							else {
+								fprintf(ccd, "iroute %s\n", route);
+								fprintf(fp, "route %s\n", route);
+							}
 						}
 
 						nvi -= strlen(chp) + 1;

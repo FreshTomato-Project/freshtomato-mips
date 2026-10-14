@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include <bcmnvram.h>
+#include <shutils.h>
 
 #include "httpd.h"
 
@@ -32,20 +33,39 @@ void wo_wwansignal(char *url)
 	web_puts("';");
 }
 
+static int valid_modem_device(const char *dev)
+{
+	return dev && (strncmp(dev, "/dev/", 5) == 0) && str_isalnum_extra(dev + 5, "._-", 1, 0);
+}
+
 static char *getModemDiagPort(const char *wannum)
 {
 	char tmp[32];
 
 	snprintf(tmp, sizeof(tmp), "%s_proto", wannum);
 	if (nvram_match(tmp, "ppp3g")) {
+		char *dev;
+
 		snprintf(tmp, sizeof(tmp), "%s_modem_dev", wannum);
-		return nvram_safe_get(tmp);
+		dev = nvram_safe_get(tmp);
+		if (!valid_modem_device(dev)) {
+			web_puts("\nwwansms_error = 'Invalid modem device!'");
+			return NULL;
+		}
+		return dev;
 	}
 	else if (nvram_match(tmp, "lte")) {
 		snprintf(tmp, sizeof(tmp), "%s_modem_type", wannum);
 		if (nvram_match(tmp, "non-hilink") || nvram_match(tmp, "huawei-non-hilink") || nvram_match(tmp, "hw-ether")) {
+			char *dev;
+
 			snprintf(tmp, sizeof(tmp), "%s_modem_dev", wannum);
-			return nvram_safe_get(tmp);
+			dev = nvram_safe_get(tmp);
+			if (!valid_modem_device(dev)) {
+				web_puts("\nwwansms_error = 'Invalid modem device!'");
+				return NULL;
+			}
+			return dev;
 		}
 		else { /* QMI or HiLink */
 			web_puts("\nwwansms_error = 'WWAN is not supported!'");

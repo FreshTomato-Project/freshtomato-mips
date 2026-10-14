@@ -667,17 +667,25 @@ static auth_t auth_check(const char *authorization)
 	const char *u, *p;
 	char* pass;
 	int len;
+	size_t encoded_len;
 
 	/* basic authorization info? */
 	if ((!authorization) || (strncmp(authorization, "Basic ", 6) != 0))
 		return AUTH_NONE;
 
-	/* something's wrong */
-	if (base64_decoded_len(strlen(authorization + 6)) > sizeof(authinfo))
+	encoded_len = strlen(authorization + 6);
+
+	/*
+	 * base64_*() uses int lengths, and authinfo needs one byte left for
+	 * the terminating NUL appended below.
+	 */
+	if ((encoded_len > INT_MAX) || (base64_decoded_len((int)encoded_len) >= sizeof(authinfo)))
 		return AUTH_BAD;
 
 	/* decode it */
-	len = base64_decode(authorization + 6, (unsigned char *)authinfo, strlen(authorization) - 6);
+	len = base64_decode(authorization + 6, (unsigned char *)authinfo, (int)encoded_len);
+	if ((len < 0) || ((size_t)len >= sizeof(authinfo)))
+		return AUTH_BAD;
 	authinfo[len] = '\0';
 
 	/* split into user and password */
@@ -1255,7 +1263,11 @@ static void start_ssl(void)
 				logmsg(LOG_INFO, "generating SSL certificate...");
 
 				/* browsers seem to like this when the ip address moves... */
-				gen_urandom(t, NULL, sizeof(t), 0);
+				if (!gen_urandom(t, NULL, sizeof(t), 0)) {
+					logmsg(LOG_CRIT, "unable to read /dev/urandom for certificate generation");
+					file_unlock(lock);
+					return;
+				}
 				eval("gencert.sh", t);
 			}
 		}
@@ -1288,7 +1300,10 @@ static void init_id(void)
 	char s[128];
 
 	if (strncmp(nvram_safe_get("http_id"), "TID", 3) != 0) {
-		gen_urandom(s, NULL, sizeof(s), 1);
+		if (!gen_urandom(s, NULL, sizeof(s), 1)) {
+			logmsg(LOG_CRIT, "unable to initialize HTTP request token from /dev/urandom");
+			exit(1);
+		}
 		nvram_set("http_id", s);
 	}
 
