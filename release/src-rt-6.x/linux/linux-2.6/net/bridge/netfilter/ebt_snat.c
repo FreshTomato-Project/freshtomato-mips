@@ -22,7 +22,10 @@ static int ebt_target_snat(struct sk_buff *skb, unsigned int hooknr,
 {
 	struct ebt_nat_info *info = (struct ebt_nat_info *) data;
 
-	if (!skb_make_writable(skb, 0))
+	/* RTAC Netfilter uses skb **, but ebtables targets retain skb *.
+	 * Copy-on-write in place so all callers keep the same sk_buff.
+	 */
+	if (skb_cow(skb, skb_headroom(skb)))
 		return EBT_DROP;
 
 	memcpy(eth_hdr(skb)->h_source, info->mac, ETH_ALEN);
