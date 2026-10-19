@@ -526,11 +526,12 @@ inhdr_error:
  * receiving device) to make netfilter happy, the REDIRECT
  * target in particular.  Save the original destination IP
  * address to be able to detect DNAT afterwards. */
-static unsigned int br_nf_pre_routing(unsigned int hook, struct sk_buff *skb,
+static unsigned int br_nf_pre_routing(unsigned int hook, struct sk_buff **pskb,
 				      const struct net_device *in,
 				      const struct net_device *out,
 				      int (*okfn)(struct sk_buff *))
 {
+	struct sk_buff *skb = *pskb;
 	struct iphdr *iph;
 	__u32 len = nf_bridge_encap_header_len(skb);
 
@@ -603,11 +604,12 @@ out:
  * took place when the packet entered the bridge), but we
  * register an IPv4 PRE_ROUTING 'sabotage' hook that will
  * prevent this from happening. */
-static unsigned int br_nf_local_in(unsigned int hook, struct sk_buff *skb,
+static unsigned int br_nf_local_in(unsigned int hook, struct sk_buff **pskb,
 				   const struct net_device *in,
 				   const struct net_device *out,
 				   int (*okfn)(struct sk_buff *))
 {
+	struct sk_buff *skb = *pskb;
 	if (skb->dst == (struct dst_entry *)&__fake_rtable) {
 		dst_release(skb->dst);
 		skb->dst = NULL;
@@ -642,11 +644,12 @@ static int br_nf_forward_finish(struct sk_buff *skb)
  * but we are still able to filter on the 'real' indev/outdev
  * because of the physdev module. For ARP, indev and outdev are the
  * bridge ports. */
-static unsigned int br_nf_forward_ip(unsigned int hook, struct sk_buff *skb,
+static unsigned int br_nf_forward_ip(unsigned int hook, struct sk_buff **pskb,
 				     const struct net_device *in,
 				     const struct net_device *out,
 				     int (*okfn)(struct sk_buff *))
 {
+	struct sk_buff *skb = *pskb;
 	struct nf_bridge_info *nf_bridge;
 	struct net_device *parent;
 	int pf;
@@ -687,11 +690,12 @@ static unsigned int br_nf_forward_ip(unsigned int hook, struct sk_buff *skb,
 	return NF_STOLEN;
 }
 
-static unsigned int br_nf_forward_arp(unsigned int hook, struct sk_buff *skb,
+static unsigned int br_nf_forward_arp(unsigned int hook, struct sk_buff **pskb,
 				      const struct net_device *in,
 				      const struct net_device *out,
 				      int (*okfn)(struct sk_buff *))
 {
+	struct sk_buff *skb = *pskb;
 	struct net_device **d = (struct net_device **)(skb->cb);
 
 #ifdef CONFIG_SYSCTL
@@ -729,11 +733,12 @@ static unsigned int br_nf_forward_arp(unsigned int hook, struct sk_buff *skb,
  * NF_BR_PRI_FIRST, so no relevant PF_BRIDGE/INPUT functions have been nor
  * will be executed.
  */
-static unsigned int br_nf_local_out(unsigned int hook, struct sk_buff *skb,
+static unsigned int br_nf_local_out(unsigned int hook, struct sk_buff **pskb,
 				    const struct net_device *in,
 				    const struct net_device *out,
 				    int (*okfn)(struct sk_buff *))
 {
+	struct sk_buff *skb = *pskb;
 	struct net_device *realindev;
 	struct nf_bridge_info *nf_bridge;
 
@@ -776,11 +781,12 @@ static int br_nf_dev_queue_xmit(struct sk_buff *skb)
 }
 
 /* PF_BRIDGE/POST_ROUTING ********************************************/
-static unsigned int br_nf_post_routing(unsigned int hook, struct sk_buff *skb,
+static unsigned int br_nf_post_routing(unsigned int hook, struct sk_buff **pskb,
 				       const struct net_device *in,
 				       const struct net_device *out,
 				       int (*okfn)(struct sk_buff *))
 {
+	struct sk_buff *skb = *pskb;
 	struct nf_bridge_info *nf_bridge = skb->nf_bridge;
 	struct net_device *realoutdev = bridge_parent(skb->dev);
 	int pf;
@@ -854,11 +860,12 @@ print_error:
 /* IP/SABOTAGE *****************************************************/
 /* Don't hand locally destined packets to PF_INET(6)/PRE_ROUTING
  * for the second time. */
-static unsigned int ip_sabotage_in(unsigned int hook, struct sk_buff *skb,
+static unsigned int ip_sabotage_in(unsigned int hook, struct sk_buff **pskb,
 				   const struct net_device *in,
 				   const struct net_device *out,
 				   int (*okfn)(struct sk_buff *))
 {
+	struct sk_buff *skb = *pskb;
 	if (skb->nf_bridge &&
 	    !(skb->nf_bridge->mask & BRNF_NF_BRIDGE_PREROUTING)) {
 		return NF_STOP;
