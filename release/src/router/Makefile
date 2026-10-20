@@ -1888,11 +1888,11 @@ sqlite: sqlite/Makefile
 
 sqlite-install:
 ifeq ($(or $(TCONFIG_NGINX),$(TCONFIG_MEDIA_SERVER)),y)
-	install -D sqlite/staged/usr/lib/libsqlite3.so.3.53.4 $(INSTALLDIR)/sqlite/usr/lib/libsqlite3.so.3.53.4
-	$(STRIP) $(INSTALLDIR)/sqlite/usr/lib/libsqlite3.so.3.53.4
+	install -D sqlite/staged/usr/lib/libsqlite3.so.3.54.1 $(INSTALLDIR)/sqlite/usr/lib/libsqlite3.so.3.54.1
+	$(STRIP) $(INSTALLDIR)/sqlite/usr/lib/libsqlite3.so.3.54.1
 	cd $(INSTALLDIR)/sqlite/usr/lib/ && \
-		ln -sf libsqlite3.so.3.53.4 libsqlite3.so.0 && \
-		ln -sf libsqlite3.so.3.53.4 libsqlite3.so
+		ln -sf libsqlite3.so.3.54.1 libsqlite3.so.0 && \
+		ln -sf libsqlite3.so.3.54.1 libsqlite3.so
 endif
 	@true
 
@@ -2378,13 +2378,13 @@ pcre2: pcre2/build/Makefile
 	@$(MAKE) -C pcre2/build DESTDIR=$(TOP)/pcre2/staged install
 
 pcre2-install:
-	install -D pcre2/staged/usr/lib/libpcre2-8.so.0.16.0 $(INSTALLDIR)/pcre2/usr/lib/libpcre2-8.so.0.16.0
-	$(STRIP) -s $(INSTALLDIR)/pcre2/usr/lib/libpcre2-8.so.0.16.0
-	cd $(INSTALLDIR)/pcre2/usr/lib/ && ln -sf libpcre2-8.so.0.16.0 libpcre2-8.so.0 && ln -sf libpcre2-8.so.0.16.0 libpcre2-8.so
+	install -D pcre2/staged/usr/lib/libpcre2-8.so.0.16.1 $(INSTALLDIR)/pcre2/usr/lib/libpcre2-8.so.0.16.1
+	$(STRIP) -s $(INSTALLDIR)/pcre2/usr/lib/libpcre2-8.so.0.16.1
+	cd $(INSTALLDIR)/pcre2/usr/lib/ && ln -sf libpcre2-8.so.0.16.1 libpcre2-8.so.0 && ln -sf libpcre2-8.so.0.16.1 libpcre2-8.so
 ifeq ($(TCONFIG_AIO),y)
-	install -D pcre2/staged/usr/lib/libpcre2-posix.so.3.0.8 $(INSTALLDIR)/pcre2/usr/lib/libpcre2-posix.so.3.0.8
-	$(STRIP) -s $(INSTALLDIR)/pcre2/usr/lib/libpcre2-posix.so.3.0.8
-	cd $(INSTALLDIR)/pcre2/usr/lib/ && ln -sf libpcre2-posix.so.3.0.8 libpcre2-posix.so.3 && ln -sf libpcre2-posix.so.3.0.8 libpcre2-posix.so
+	install -D pcre2/staged/usr/lib/libpcre2-posix.so.3.0.9 $(INSTALLDIR)/pcre2/usr/lib/libpcre2-posix.so.3.0.9
+	$(STRIP) -s $(INSTALLDIR)/pcre2/usr/lib/libpcre2-posix.so.3.0.9
+	cd $(INSTALLDIR)/pcre2/usr/lib/ && ln -sf libpcre2-posix.so.3.0.9 libpcre2-posix.so.3 && ln -sf libpcre2-posix.so.3.0.9 libpcre2-posix.so
 endif
 
 pcre2-clean:
