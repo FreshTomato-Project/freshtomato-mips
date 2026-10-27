@@ -1876,23 +1876,24 @@ zlib-clean:
 sqlite/Makefile:
 	cd sqlite && \
 		CFLAGS="-Os $(EXTRACFLAGS) -fPIC $(GCC_CMODE) -DHAVE_ISNAN -ffunction-sections -fdata-sections -I$(TOP)/zlib/staged/usr/include" \
-		LDFLAGS="-Wl,--gc-sections -L$(TOP)/zlib/staged/usr/lib" \
+		LDFLAGS="-Wl,--gc-sections -L$(TOP)/zlib/staged/usr/lib -lm" \
 		$(CONFIGURE) --prefix=/usr --enable-shared --disable-static --enable-threadsafe \
 			--disable-editline --disable-readline --disable-session --disable-fts3 \
-			--disable-fts4 --disable-fts5 --disable-rtree --soname=legacy
+			--disable-fts4 --disable-fts5 --disable-rtree --soname=legacy \
+			--disable-load-extension --disable-math
 
 sqlite: sqlite/Makefile
 	@$(SEP)
-	@$(MAKE) -C $@ all $(PARALLEL_BUILD)
-	@$(MAKE) -C $@ DESTDIR=$(TOP)/sqlite/staged install
+	@$(MAKE) -C $@ libsqlite3.so $(PARALLEL_BUILD)
+	@$(MAKE) -C $@ DESTDIR=$(TOP)/sqlite/staged install-dll install-headers install-pc
 
 sqlite-install:
 ifeq ($(or $(TCONFIG_NGINX),$(TCONFIG_MEDIA_SERVER)),y)
-	install -D sqlite/staged/usr/lib/libsqlite3.so.3.53.4 $(INSTALLDIR)/sqlite/usr/lib/libsqlite3.so.3.53.4
-	$(STRIP) $(INSTALLDIR)/sqlite/usr/lib/libsqlite3.so.3.53.4
+	install -D sqlite/staged/usr/lib/libsqlite3.so.3.54.1 $(INSTALLDIR)/sqlite/usr/lib/libsqlite3.so.3.54.1
+	$(STRIP) $(INSTALLDIR)/sqlite/usr/lib/libsqlite3.so.3.54.1
 	cd $(INSTALLDIR)/sqlite/usr/lib/ && \
-		ln -sf libsqlite3.so.3.53.4 libsqlite3.so.0 && \
-		ln -sf libsqlite3.so.3.53.4 libsqlite3.so
+		ln -sf libsqlite3.so.3.54.1 libsqlite3.so.0 && \
+		ln -sf libsqlite3.so.3.54.1 libsqlite3.so
 endif
 	@true
 
@@ -2378,13 +2379,13 @@ pcre2: pcre2/build/Makefile
 	@$(MAKE) -C pcre2/build DESTDIR=$(TOP)/pcre2/staged install
 
 pcre2-install:
-	install -D pcre2/staged/usr/lib/libpcre2-8.so.0.16.0 $(INSTALLDIR)/pcre2/usr/lib/libpcre2-8.so.0.16.0
-	$(STRIP) -s $(INSTALLDIR)/pcre2/usr/lib/libpcre2-8.so.0.16.0
-	cd $(INSTALLDIR)/pcre2/usr/lib/ && ln -sf libpcre2-8.so.0.16.0 libpcre2-8.so.0 && ln -sf libpcre2-8.so.0.16.0 libpcre2-8.so
+	install -D pcre2/staged/usr/lib/libpcre2-8.so.0.16.1 $(INSTALLDIR)/pcre2/usr/lib/libpcre2-8.so.0.16.1
+	$(STRIP) -s $(INSTALLDIR)/pcre2/usr/lib/libpcre2-8.so.0.16.1
+	cd $(INSTALLDIR)/pcre2/usr/lib/ && ln -sf libpcre2-8.so.0.16.1 libpcre2-8.so.0 && ln -sf libpcre2-8.so.0.16.1 libpcre2-8.so
 ifeq ($(TCONFIG_AIO),y)
-	install -D pcre2/staged/usr/lib/libpcre2-posix.so.3.0.8 $(INSTALLDIR)/pcre2/usr/lib/libpcre2-posix.so.3.0.8
-	$(STRIP) -s $(INSTALLDIR)/pcre2/usr/lib/libpcre2-posix.so.3.0.8
-	cd $(INSTALLDIR)/pcre2/usr/lib/ && ln -sf libpcre2-posix.so.3.0.8 libpcre2-posix.so.3 && ln -sf libpcre2-posix.so.3.0.8 libpcre2-posix.so
+	install -D pcre2/staged/usr/lib/libpcre2-posix.so.3.0.9 $(INSTALLDIR)/pcre2/usr/lib/libpcre2-posix.so.3.0.9
+	$(STRIP) -s $(INSTALLDIR)/pcre2/usr/lib/libpcre2-posix.so.3.0.9
+	cd $(INSTALLDIR)/pcre2/usr/lib/ && ln -sf libpcre2-posix.so.3.0.9 libpcre2-posix.so.3 && ln -sf libpcre2-posix.so.3.0.9 libpcre2-posix.so
 endif
 
 pcre2-clean:
@@ -2539,9 +2540,9 @@ libpng: libpng/build/Makefile
 	@$(MAKE) -C libpng/build DESTDIR=$(TOP)/libpng/staged install
 
 libpng-install:
-	install -D libpng/build/libpng16.so.16.58.0 $(INSTALLDIR)/libpng/usr/lib/libpng16.so.16.58.0
-	$(STRIP) $(INSTALLDIR)/libpng/usr/lib/libpng16.so.16.58.0
-	cd $(INSTALLDIR)/libpng/usr/lib && ln -sf libpng16.so.16.58.0 libpng16.so && ln -sf libpng16.so.16.58.0 libpng16.so.16
+	install -D libpng/build/libpng16.so.16.59.0 $(INSTALLDIR)/libpng/usr/lib/libpng16.so.16.59.0
+	$(STRIP) $(INSTALLDIR)/libpng/usr/lib/libpng16.so.16.59.0
+	cd $(INSTALLDIR)/libpng/usr/lib && ln -sf libpng16.so.16.59.0 libpng16.so && ln -sf libpng16.so.16.59.0 libpng16.so.16
 
 libpng-clean:
 	@rm -rf libpng/build
@@ -2560,13 +2561,13 @@ libzip/build/Makefile:
 			-DENABLE_COMMONCRYPTO=FALSE \
 			-DENABLE_GNUTLS=FALSE \
 			-DENABLE_OPENSSL=FALSE \
-			-DENABLE_MBEDTLS=FALSE \
 			-DENABLE_BZIP2=FALSE \
 			-DENABLE_LZMA=FALSE \
 			-DENABLE_ZSTD=FALSE \
 			-DENABLE_WINDOWS_CRYPTO=FALSE \
 			-DBUILD_TOOLS=FALSE \
 			-DBUILD_REGRESS=FALSE \
+			-DBUILD_OSSFUZZ=FALSE \
 			-DBUILD_EXAMPLES=FALSE \
 			-DBUILD_DOC=FALSE \
 			-DZLIB_INCLUDE_DIR="$(TOP)/zlib/staged/usr/include" \
@@ -2579,8 +2580,8 @@ libzip: libzip/build/Makefile
 	@$(MAKE) -C libzip/build DESTDIR=$(TOP)/libzip/staged install
 
 libzip-install:
-	install -D libzip/build/lib/libzip.so.5.5 $(INSTALLDIR)/libzip/usr/lib/libzip.so.5.5
-	cd $(INSTALLDIR)/libzip/usr/lib/ && $(STRIP) libzip.so.5.5 && ln -sf libzip.so.5.5 libzip.so && ln -sf libzip.so.5.5 libzip.so.5
+	install -D libzip/build/lib/libzip.so.5.6 $(INSTALLDIR)/libzip/usr/lib/libzip.so.5.6
+	cd $(INSTALLDIR)/libzip/usr/lib/ && $(STRIP) libzip.so.5.6 && ln -sf libzip.so.5.6 libzip.so && ln -sf libzip.so.5.6 libzip.so.5
 
 libzip-clean:
 	@rm -rf libzip/build
@@ -2763,6 +2764,12 @@ nginx/stamp-h1:
 			--with-http_v2_module \
 			--with-http_realip_module \
 			--without-http_upstream_zone_module \
+			--without-http_mirror_module \
+			--without-http_split_clients_module \
+			--without-http_empty_gif_module \
+			--without-http_browser_module \
+			--without-http_userid_module \
+			--without-http_memcached_module \
 			$(if $(TCONFIG_WOLFSSL),--with-wolfssl=$(TOP)/wolfssl/staged/usr,) \
 			$(if $(TCONFIG_BCMARM),,--with-libatomic=$(TOP)/libatomic_ops) \
 			$(if $(TCONFIG_IPV6),--with-ipv6,)
@@ -3080,6 +3087,7 @@ $(LIBCURL_TARGET)/stamp-h1:
 			--without-gnutls --without-libidn2 --without-libpsl $(if $(TCONFIG_BCMARM),,--disable-tls-srp) --without-ngtcp2 --without-nghttp3 --without-quiche --without-msh3 \
 			--without-brotli --without-nghttp2 --without-zstd --without-librtmp --disable-versioned-symbols --enable-symbol-hiding --disable-proxy --disable-ntlm \
 			--disable-ntlm-wb --disable-websockets --disable-alt-svc --disable-ares disable-libcurl-option --without-libgsasl --disable-docs --disable-dependency-tracking \
+			--disable-ipfs --disable-mqtt --disable-rtsp --disable-smb \
 			--without-ca-path $(if $(TCONFIG_STUBBY),--with-ca-bundle=/etc/ssl/certs/ca-certificates.crt)
 	@touch $@
 
@@ -3586,7 +3594,8 @@ tor/stamp-h1:
 			--with-openssl-dir=$(TOP)/$(OPENSSLDIR)/staged/usr --with-zlib-dir=$(TOP)/zlib/staged/usr \
 			--disable-asciidoc --disable-tool-name-check --disable-unittests --disable-lzma \
 			--disable-seccomp --disable-libscrypt --disable-zstd-advanced-apis \
-			--disable-manpage --disable-html-manual --disable-dependency-tracking --disable-zstd --disable-systemd
+			--disable-manpage --disable-html-manual --disable-dependency-tracking --disable-zstd --disable-systemd \
+			--disable-module-relay --disable-system-torrc
 	@touch $@
 
 tor: tor/stamp-h1
@@ -3799,7 +3808,7 @@ iperf/stamp-h1:
 		LIBS="-lgcc_s" \
 		ac_cv_func_clock_gettime="no" \
 		ac_cv_func_daemon="no" \
-		$(CONFIGURE) --prefix=/usr --disable-profiling --without-openssl --without-sctp
+		$(CONFIGURE) --prefix=/usr --disable-profiling --without-openssl --without-sctp --disable-shared --enable-static
 	@touch $@
 
 iperf: iperf/stamp-h1
@@ -3807,14 +3816,9 @@ iperf: iperf/stamp-h1
 	$(MAKE) -C iperf
 
 iperf-install:
-	install -D iperf/src/.libs/iperf3 $(INSTALLDIR)/iperf/usr/sbin/iperf
+	install -D iperf/src/iperf3 $(INSTALLDIR)/iperf/usr/sbin/iperf
 	install -d $(INSTALLDIR)/iperf/usr/lib/
-	install iperf/src/.libs/libiperf.so.0.0.0 $(INSTALLDIR)/iperf/usr/lib/libiperf.so.0.0.0
-	$(STRIP) $(INSTALLDIR)/iperf/usr/lib/libiperf.so.0.0.0
 	$(STRIP) $(INSTALLDIR)/iperf/usr/sbin/iperf
-	cd $(INSTALLDIR)/iperf/usr/lib/ && \
-		ln -sf libiperf.so.0.0.0 libiperf.so.0 && \
-		ln -sf libiperf.so.0.0.0 libiperf.so
 
 iperf-clean:
 	-@$(MAKE) -C iperf clean
@@ -3861,7 +3865,6 @@ expat/static/Makefile:
 			-DEXPAT_BUILD_DOCS=OFF \
 			-DEXPAT_DTD=OFF \
 			-DEXPAT_NS=OFF \
-			-DEXPAT_MIN_SIZE=ON \
 			-DEXPAT_SHARED_LIBS=OFF \
 			-DEXPAT_WITH_ARC4RANDOM=OFF \
 			-DEXPAT_WITH_ARC4RANDOM_BUF=OFF \
@@ -3884,7 +3887,6 @@ expat/build/Makefile:
 			-DEXPAT_BUILD_DOCS=OFF \
 			-DEXPAT_DTD=OFF \
 			-DEXPAT_NS=OFF \
-			-DEXPAT_MIN_SIZE=ON \
 			-DEXPAT_WITH_ARC4RANDOM=OFF \
 			-DEXPAT_WITH_ARC4RANDOM_BUF=OFF \
 			-DEXPAT_WITH_GETENTROPY=OFF \
@@ -3898,8 +3900,8 @@ expat: expat/static/Makefile expat/build/Makefile
 	@$(MAKE) -C expat/build DESTDIR=$(TOP)/expat/staged install
 
 expat-install:
-	install -D expat/build/libexpat.so.1.12.4 $(INSTALLDIR)/expat/usr/lib/libexpat.so.1.12.4
-	cd $(INSTALLDIR)/expat/usr/lib && $(STRIP) libexpat.so.1.12.4 && ln -sf libexpat.so.1.12.4 libexpat.so.1
+	install -D expat/build/libexpat.so.1.13.0 $(INSTALLDIR)/expat/usr/lib/libexpat.so.1.13.0
+	cd $(INSTALLDIR)/expat/usr/lib && $(STRIP) libexpat.so.1.13.0 && ln -sf libexpat.so.1.13.0 libexpat.so.1
 
 expat-clean:
 	@rm -rf expat/static

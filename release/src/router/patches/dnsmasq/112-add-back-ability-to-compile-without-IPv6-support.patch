@@ -281,7 +281,7 @@
  	}
  
        insert_error = 1;
-@@ -1284,7 +1289,11 @@
+@@ -1293,7 +1298,11 @@
  				time_t now, unsigned int prot)
  {
    struct crec *ans;
@@ -293,7 +293,7 @@
    
    if (crecp) /* iterating */
      ans = crecp->next;
-@@ -1480,12 +1489,14 @@
+@@ -1489,12 +1498,14 @@
  	  addrlen = INADDRSZ;
  	  domain_suffix = get_domain(addr.addr4);
  	}
@@ -308,7 +308,7 @@
        else
  	{
  	  my_syslog(LOG_ERR, _("bad address at %s line %d"), filename, lineno); 
-@@ -1678,6 +1689,7 @@
+@@ -1687,6 +1698,7 @@
  	    add_hosts_entry(cache, (union all_addr *)&hr->addr, INADDRSZ, SRC_CONFIG, (struct crec **)daemon->packet, revhashsz);
  	  }
  
@@ -316,7 +316,7 @@
  	if ((hr->flags & HR_6) &&
  	    (cache = get_config_crec()))
  	  {
-@@ -1686,6 +1698,7 @@
+@@ -1695,6 +1707,7 @@
  	    cache->flags = F_HOSTS | F_IMMORTAL | F_FORWARD | F_REVERSE | F_IPV6 | F_NAMEP | F_CONFIG;
  	    add_hosts_entry(cache, (union all_addr *)&hr->addr6, IN6ADDRSZ, SRC_CONFIG, (struct crec **)daemon->packet, revhashsz);
  	  }
@@ -324,7 +324,7 @@
        }
  	
    if (option_bool(OPT_NO_HOSTS) && !daemon->addn_hosts)
-@@ -1785,11 +1798,13 @@
+@@ -1794,11 +1807,13 @@
    int in_hosts = 0;
    size_t addrlen = sizeof(struct in_addr);
  
@@ -338,7 +338,7 @@
    
    inet_ntop(prot, host_address, daemon->addrbuff, ADDRSTRLEN);
    
-@@ -2110,8 +2125,10 @@
+@@ -2119,8 +2134,10 @@
        a = daemon->addrbuff;
        if (cache->flags & F_IPV4)
  	inet_ntop(AF_INET, &cache->addr, a, ADDRSTRLEN);
@@ -459,7 +459,7 @@
  	/* At the end */
 --- dnsmasq/src/dnsmasq.c
 +++ dnsmasq/src/dnsmasq.c
-@@ -2143,9 +2143,11 @@
+@@ -2155,9 +2155,11 @@
  
  	  got_index = 1;
  	  
@@ -532,7 +532,7 @@
    int is6, indexed, prefixlen;
    struct cond_domain *next;
  }; 
-@@ -1419,7 +1427,9 @@
+@@ -1420,7 +1428,9 @@
  
  /* domain.c */
  char *get_domain(struct in_addr addr);
@@ -542,7 +542,7 @@
  int is_name_synthetic(int flags, char *name, union all_addr *addr);
  int is_rev_synth(int flag, union all_addr *addr, char *name);
  
-@@ -1529,9 +1539,11 @@
+@@ -1530,9 +1540,11 @@
  int netmask_length(struct in_addr mask);
  int is_same_net(struct in_addr a, struct in_addr b, struct in_addr mask);
  int is_same_net_prefix(struct in_addr a, struct in_addr b, int prefix);
@@ -554,7 +554,7 @@
  int retry_send(ssize_t rc);
  void prettyprint_time(char *buf, unsigned int t);
  int prettyprint_addr(union mysockaddr *addr, char *buf);
-@@ -1613,7 +1625,9 @@
+@@ -1614,7 +1626,9 @@
  int label_exception(int index, int family, union all_addr *addr);
  int fix_fd(int fd);
  int tcp_interface(int fd, int af);
@@ -566,7 +566,7 @@
  #endif
 --- dnsmasq/src/dnssec.c
 +++ dnsmasq/src/dnssec.c
-@@ -1037,7 +1037,11 @@
+@@ -1038,7 +1038,11 @@
  	    {
  	      if (option_bool(OPT_BOGUSPRIV) &&
  		  (flags = in_arpa_name_2_addr(name, &a)) &&
