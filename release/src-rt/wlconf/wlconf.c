@@ -1157,6 +1157,7 @@ wlconf(char *name)
 	uint nbw = WL_CHANSPEC_BW_20;
 	int nmode = OFF; /* 802.11n support */
 	char vif_addr[WLC_IOCTL_SMLEN];
+	unsigned char vif_base_last;
 	int max_no_vifs = 0;
 	int wme_global;
 	int max_assoc = -1;
@@ -1175,10 +1176,12 @@ wlconf(char *name)
 			 */
 			sprintf(tmp, "wl%d_vifs", wlunit);
 
-			if (strstr(nvram_safe_get(tmp), name) == NULL)
-				return -1; /* config error */
-			else
-				return 0; /* okay */
+			/* Do not treat wl0.1 as a match for wl0.10. */
+			foreach(var, nvram_safe_get(tmp), next) {
+				if (!strcmp(var, name))
+					return 0; /* okay */
+			}
+			return -1; /* config error */
 		}
 	} else {
 		return -1;
@@ -1324,14 +1327,19 @@ wlconf(char *name)
 	if (!ure_enab) {
 		/* set local bit for our MBSS vif base */
 		ETHER_SET_LOCALADDR(vif_addr);
+		vif_base_last = (unsigned char)vif_addr[5];
 
 		/* construct and set other wlX.Y_hwaddr */
 		for (i = 1; i < max_no_vifs; i++) {
 			snprintf(tmp, sizeof(tmp), "wl%d.%d_hwaddr", unit, i);
 			addr = nvram_safe_get(tmp);
 			if (!strcmp(addr, "")) {
-				vif_addr[5] = (vif_addr[5] & ~(max_no_vifs-1))
-				        | ((max_no_vifs-1) & (vif_addr[5]+1));
+				/*
+				 * Calculate each slot from the original radio MAC.
+				 * Existing slots must not shift defaults for missing slots.
+				 */
+				vif_addr[5] = (vif_base_last & ~(max_no_vifs - 1))
+				        | ((vif_base_last + i) & (max_no_vifs - 1));
 
 				nvram_set(tmp, ether_etoa((uchar *)vif_addr, eaddr));
 			}
@@ -2440,10 +2448,12 @@ wlconf_start(char *name)
 			 */
 			sprintf(tmp, "wl%d_vifs", wlunit);
 
-			if (strstr(nvram_safe_get(tmp), name) == NULL)
-				return -1; /* config error */
-			else
-				return 0; /* okay */
+			/* Do not treat wl0.1 as a match for wl0.10. */
+			foreach(var, nvram_safe_get(tmp), next) {
+				if (!strcmp(var, name))
+					return 0; /* okay */
+			}
+			return -1; /* config error */
 		}
 	}
 	else {
