@@ -1682,7 +1682,7 @@ pppd/Makefile:
 			--enable-microsoft-extensions --enable-plugins \
 			--disable-openssl-engine --without-openssl \
 			--disable-eaptls --disable-peap --disable-systemd \
-			--without-pam --without-pcap --without-srp --without-atm \
+			--without-pam --without-pcap \
 			--disable-cbcp --disable-mslanman \
 			$(if $(TCONFIG_OPTIMIZE_SIZE_MORE),--disable-multilink,--enable-multilink) \
 			$(if $(TCONFIG_IPV6),--enable-ipv6cp,--disable-ipv6cp)
@@ -1950,7 +1950,6 @@ flac-clean:
 	$(call unpatch_files,flac)
 
 libjpeg-turbo/build/Makefile:
-	$(call patch_files,libjpeg-turbo)
 	@rm -rf libjpeg-turbo/build && rm -f libjpeg-turbo/jconfig.h && mkdir -p libjpeg-turbo/build
 	cd libjpeg-turbo/build && $(call CMAKE_CrossOptions, crosscompiled.cmake) && \
 		cmake -DCMAKE_TOOLCHAIN_FILE=crosscompiled.cmake \
@@ -1982,7 +1981,6 @@ libjpeg-turbo-clean:
 	@rm -rf libjpeg-turbo/build
 	@rm -rf libjpeg-turbo/staged
 	@rm -f libjpeg-turbo/jconfig.h
-	$(call unpatch_files,libjpeg-turbo)
 
 libexif/stamp-h1:
 	cd libexif && autoreconf -fsi && \
@@ -3363,9 +3361,9 @@ lz4:
 		$(MAKE) LN_S="ln -sf" install DESTDIR=$(TOP)/lz4/staged
 
 lz4-install:
-	install -D lz4/lib/liblz4.so.1.10.0 $(INSTALLDIR)/lz4/usr/lib/liblz4.so.1.10.0
-	$(STRIP) $(INSTALLDIR)/lz4/usr/lib/liblz4.so.1.10.0
-	cd $(INSTALLDIR)/lz4/usr/lib && ln -sf liblz4.so.1.10.0 liblz4.so.1 && ln -sf liblz4.so.1.10.0 liblz4.so
+	install -D lz4/lib/liblz4.so.1.11.0 $(INSTALLDIR)/lz4/usr/lib/liblz4.so.1.11.0
+	$(STRIP) $(INSTALLDIR)/lz4/usr/lib/liblz4.so.1.11.0
+	cd $(INSTALLDIR)/lz4/usr/lib && ln -sf liblz4.so.1.11.0 liblz4.so.1 && ln -sf liblz4.so.1.11.0 liblz4.so
 
 lz4-clean:
 	-@$(MAKE) -C lz4 clean
@@ -3900,8 +3898,8 @@ expat: expat/static/Makefile expat/build/Makefile
 	@$(MAKE) -C expat/build DESTDIR=$(TOP)/expat/staged install
 
 expat-install:
-	install -D expat/build/libexpat.so.1.13.0 $(INSTALLDIR)/expat/usr/lib/libexpat.so.1.13.0
-	cd $(INSTALLDIR)/expat/usr/lib && $(STRIP) libexpat.so.1.13.0 && ln -sf libexpat.so.1.13.0 libexpat.so.1
+	install -D expat/build/libexpat.so.1.13.1 $(INSTALLDIR)/expat/usr/lib/libexpat.so.1.13.1
+	cd $(INSTALLDIR)/expat/usr/lib && $(STRIP) libexpat.so.1.13.1 && ln -sf libexpat.so.1.13.1 libexpat.so.1
 
 expat-clean:
 	@rm -rf expat/static

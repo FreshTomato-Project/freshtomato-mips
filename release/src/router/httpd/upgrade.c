@@ -297,9 +297,9 @@ void wo_flash(char *url)
 	int status;
 
 #ifdef TCONFIG_BCMARM
-	char *args[] = { "mtd-write2", upgrade_file, "linux", NULL };
+	char *args[] = { "mtd-write2", upgrade_file, "linux", NULL, NULL };
 #else
-	char *args[] = { "mtd-write", "-w", "-i", upgrade_file, "-d", "linux", NULL };
+	char *args[] = { "mtd-write", "-w", "-i", upgrade_file, "-d", "linux", NULL, NULL };
 #endif
 
 	if (!rboot || !upgrade_file[0]) {
@@ -321,20 +321,29 @@ void wo_flash(char *url)
 	 * networking/storage kept alive for the upload response.
 	 */
 	if (!finalize_upgrade())
-		logmsg(LOG_WARNING, "upgrade-finalize did not complete before timeout; continuing");
+		dbg("upgrade: upgrade-finalize did not complete before timeout; continuing\n");
+
+#ifdef TCONFIG_BCMARM
+	/*
+	 * Let the running firmware writer erase NVRAM after a successful write.
+	 * Avoid exec'ing mtd-erase2 from the rootfs we have just overwritten.
+	 */
+	if (upgrade_reset) {
+		args[3] = args[2];
+		args[2] = args[1];
+		args[1] = "-e";
+	}
+#else
+	/* Keep firmware flashing and NVRAM erase in the same MIPS writer process. */
+	if (upgrade_reset)
+		args[6] = "-e";
+#endif
 
 	sync();
 	unlink("/tmp/.mtd-write");
 	status = _eval(args, ">/tmp/.mtd-write", 0, NULL);
-
-	if ((status == 0) && upgrade_reset) {
-		set_action(ACT_IDLE);
-#ifdef TCONFIG_BCMARM
-		eval("mtd-erase2", "nvram");
-#else
-		eval("mtd-erase", "-d", "nvram");
-#endif
-	}
+	if (status != 0)
+		dbg("upgrade: firmware writer failed (status %d); rebooting\n", status);
 
 	unlink(upgrade_file);
 	upgrade_file[0] = '\0';

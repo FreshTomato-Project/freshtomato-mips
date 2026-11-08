@@ -490,15 +490,22 @@ int mtd_write_main(int argc, char *argv[])
 	int c;
 	int web = 0;
 	int check_only = 0;
+	int erase_nvram = 0;
 	int crc_ok = 0;
+#ifndef DEBUG_SIMULATE
+	int flash_started = 0;
+#endif
 	char *iname = NULL;
 	char *dev = NULL;
 	int model;
 
-	while ((c = getopt(argc, argv, "ci:d:w")) != -1) {
+	while ((c = getopt(argc, argv, "cei:d:w")) != -1) {
 		switch (c) {
 		case 'c':
 			check_only = 1;
+			break;
+		case 'e':
+			erase_nvram = 1;
 			break;
 		case 'i':
 			iname = optarg;
@@ -512,8 +519,8 @@ int mtd_write_main(int argc, char *argv[])
 		}
 	}
 
-	if ((iname == NULL) || (dev == NULL)) {
-		usage_exit(argv[0], "[-c] -i file -d part");
+	if ((iname == NULL) || (dev == NULL) || (check_only && erase_nvram)) {
+		usage_exit(argv[0], "[-c|-e] -i file -d part");
 	}
 
 	if (!check_only) {
@@ -808,6 +815,8 @@ int mtd_write_main(int argc, char *argv[])
 				break;
 			}
 #else
+			/* Treat an attempted erase as destructive, even if it reports failure. */
+			flash_started = 1;
 			ioctl(mf, MEMUNLOCK, &ei);
 			if (ioctl(mf, MEMERASE, &ei) != 0
 #ifdef TCONFIG_BLINK /* RT-N/RTAC */
@@ -956,8 +965,21 @@ ERROR:
 
 	crc_done();
 
+#ifndef DEBUG_SIMULATE
+	if (!check_only && erase_nvram && !error) {
+		/* mtd_erase() requires an idle action and runs in this process. */
+		set_action(ACT_IDLE);
+		if (mtd_erase("nvram") != 0)
+			error = "Firmware flashed, but NVRAM erase failed";
+	}
+#endif
+
 #ifdef DEBUG_SIMULATE
 	if (!check_only)
+		set_action(ACT_IDLE);
+#else
+	/* No flash write was attempted: release the lock on an early error. */
+	if (!check_only && error && !flash_started)
 		set_action(ACT_IDLE);
 #endif
 
@@ -999,11 +1021,12 @@ int mtd_open(const char *mtd, int flags)
 {
 	FILE *fp;
 	char dev[PATH_MAX];
+	char name[128];
 	int i;
 
 	if ((fp = fopen("/proc/mtd", "r"))) {
 		while (fgets(dev, sizeof(dev), fp)) {
-			if (sscanf(dev, "mtd%d:", &i) && strstr(dev, mtd)) {
+			if (sscanf(dev, "mtd%d: %*x %*x \"%127[^\"]\"", &i, name) == 2 && strcmp(name, mtd) == 0) {
 				snprintf(dev, sizeof(dev), "/dev/mtd%d", i);
 				fclose(fp);
 				return open(dev, flags);
@@ -1274,21 +1297,16 @@ static int mtd_write_internal(const char *path, const char *mtd, int check_only)
 
 #ifdef CONFIG_FAILSAFE_UPGRADE
 	int model = get_model();
+	const char *next_bootpartition = NULL;
 
 	if (model == MODEL_EA6700 || model == MODEL_EA6400 || model == MODEL_EA6350v1 || model == MODEL_EA6350v2) {
 		if (nvram_match("bootpartition", "1")) {
 			mtd = "linux";
-			if (!check_only) {
-				nvram_set("bootpartition", "0");
-				nvram_commit();
-			}
+			next_bootpartition = "0";
 		}
 		else {
 			mtd = "linux2";
-			if (!check_only) {
-				nvram_set("bootpartition", "1");
-				nvram_commit();
-			}
+			next_bootpartition = "1";
 		}
 	}
 #endif
@@ -1404,6 +1422,16 @@ static int mtd_write_internal(const char *path, const char *mtd, int check_only)
 		fprintf(stderr, "%s: CRC was not fully validated\n", path);
 		goto fail;
 	}
+
+#ifdef CONFIG_FAILSAFE_UPGRADE
+	/* Switch boot partitions only after the inactive image is fully written. */
+	if (!check_only && next_bootpartition) {
+		if (nvram_set("bootpartition", next_bootpartition) != 0 || nvram_commit() != 0) {
+			fprintf(stderr, "Failed to commit bootpartition=%s to NVRAM\n", next_bootpartition);
+			goto fail;
+		}
+	}
+#endif
 
 #ifdef PLC
 	if (!check_only) {
