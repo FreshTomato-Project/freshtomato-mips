@@ -108,6 +108,7 @@ EXPORT_SYMBOL(ctf_attach_fn);
 
 /* Kernel command line */
 extern char arcs_cmdline[CL_SIZE];
+extern int linksys_nvram_hack;
 static int lanports_enable = 0;
 
 static void
@@ -662,6 +663,13 @@ init_mtd_partitions(struct mtd_info *mtd, size_t size)
 	bcm947xx_flash_parts[nparts].name = "nvram";
 	bcm947xx_flash_parts[nparts].size = ROUNDUP(NVRAM_SPACE, mtd->erasesize);
 	bcm947xx_flash_parts[nparts].offset = size - bcm947xx_flash_parts[nparts].size;
+	if (linksys_nvram_hack && size >= 0x40000) {
+		/* Linksys EA6500v1: NVRAM lives at size - 256KB; keep partition NVRAM_SPACE long
+		 * so that nvram_mtd->size - NVRAM_SPACE == 0 (header at partition start) */
+		bcm947xx_flash_parts[nparts].offset = size - 0x40000;
+		printk(KERN_NOTICE "Linksys NVRAM Hack: nvram partition at 0x%x size 0x%x\n",
+			bcm947xx_flash_parts[nparts].offset, bcm947xx_flash_parts[nparts].size);
+	}
 	nparts++;
 
 	return bcm947xx_flash_parts;

@@ -354,6 +354,10 @@ nvram_valid(struct nvram_header *header)
 	;
 }
 
+/* set when NVRAM was found at flash_size - 256KB (Linksys EA6500v1) */
+int linksys_nvram_hack = 0;
+EXPORT_SYMBOL(linksys_nvram_hack);
+
 /* Probe for NVRAM header */
 static int
 early_nvram_init(void)
@@ -447,6 +451,16 @@ early_nvram_init(void)
 		if (nvram_valid(header))
 			goto found;
 		off <<= 1;
+	}
+
+	/* Linksys EA6500v1: CFE keeps NVRAM at flash_size - 256KB (0xC0000 on 1MB SPI) */
+	if (lim >= 0x40000) {
+		header = (struct nvram_header *) KSEG1ADDR(base + lim - 0x40000);
+		if (nvram_valid(header)) {
+			linksys_nvram_hack = 1;
+			printk(KERN_NOTICE "Linksys NVRAM Hack: nvram at 0x%x\n", lim - 0x40000);
+			goto found;
+		}
 	}
 
 	/* Try embedded NVRAM at 4 KB and 1 KB as last resorts */
