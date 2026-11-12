@@ -1821,6 +1821,10 @@ struct mtd_partition *init_brcmnand_mtd_partitions(struct mtd_info *mtd, size_t 
 #else
 		brcmnand_parts[j].size = NFL_BOOT_OS_SIZE;
 #endif
+#ifdef CONFIG_EA6500V1
+		/* Use only the nflash "linux" partition for firmware writes. */
+		brcmnand_parts[j].mask_flags = MTD_WRITEABLE;
+#endif
 		offset += brcmnand_parts[j].size;
 		size   -= brcmnand_parts[j].size;
 		j++;
@@ -1840,7 +1844,13 @@ struct mtd_partition *init_brcmnand_mtd_partitions(struct mtd_info *mtd, size_t 
                 if (jffssize > PART_JFFS2_MAXSIZE)
                         jffssize = PART_JFFS2_MAXSIZE;
 
+#ifdef CONFIG_EA6500V1
+                /* Reserve the stock CFE fallback slot; never format it as JFFS. */
+                brcmnand_parts[j].name = "stock";
+                brcmnand_parts[j].mask_flags = MTD_WRITEABLE;
+#else
                 brcmnand_parts[j].name = "jffs2";
+#endif
                 brcmnand_parts[j].offset = offset;
                 brcmnand_parts[j].size = jffssize;
                 offset += brcmnand_parts[j].size;
@@ -1856,6 +1866,10 @@ struct mtd_partition *init_brcmnand_mtd_partitions(struct mtd_info *mtd, size_t 
 
 	brcmnand_parts[j].name = "brcmnand";
 	brcmnand_parts[j].offset = offset;
+#ifdef CONFIG_EA6500V1
+	/* Leave the remaining NAND untouched until its stock layout is known. */
+	brcmnand_parts[j].mask_flags = MTD_WRITEABLE;
+#endif
 	brcmnand_parts[j++].size = size;
 
 	return brcmnand_parts;

@@ -5,6 +5,15 @@ build_all:
 	@echo ""
 
 	@-mkdir image
+ifeq ($(EA6500V1),y)
+	@grep -qx "CONFIG_EA6500V1=y" $(LINUXDIR)/.config && \
+		grep -qx "CONFIG_NVRAM_64K=y" $(LINUXDIR)/.config && \
+		grep -qx "CONFIG_MTD_NFLASH=y" $(LINUXDIR)/.config && \
+		grep -qx "TCONFIG_EA6500V1=y" router/.config && \
+		! grep -Eq '^TCONFIG_(JFFS2|JFFSV1|BRCM_NAND_JFFS2)=y$$' router/.config && \
+		! grep -Eq '^CONFIG_(DUAL_TRX|FAILSAFE_UPGRADE)=y$$' $(LINUXDIR)/.config || \
+		{ echo "ERROR: EA6500 v1 build configuration incomplete" >&2; exit 1; }
+endif
 	@$(MAKE) -C router all
 	@$(MAKE) -C router install
 	@$(MAKE) -C btools
@@ -13,6 +22,12 @@ build_all:
 
 	@rm -f image/freshtomato-$(branch_rev)$(fn_BUILD_USB)$(fn_NVRAM_SIZE)-$(current_TOMATO_VER)$(beta)$(current_V2)-$(current_BUILD_DESC).trx
 	@rm -f image/freshtomato-$(branch_rev)$(fn_BUILD_USB)$(fn_NVRAM_SIZE)-$(current_TOMATO_VER)$(beta)$(current_V2)-$(current_BUILD_DESC).bin
+ifeq ($(EA6500V1),y)
+	$(MAKE) -C ctools
+	ctools/objcopy -O binary -R .reginfo -R .note -R .comment -R .mdebug -S $(LINUXDIR)/vmlinux ctools/piggy
+	@echo "Creating Firmware for Linksys EA6500 v1 ..."
+	$(call CREATE_INJECT_MODEL_EA6500V1,freshtomato-Linksys-EA6500V1-$(branch_rev)-$(current_TOMATO_VER)$(beta)$(current_V2)-$(current_BUILD_DESC).trx)
+else
 
 ifneq ($(ASUS_TRX),0)
  ifeq ($(ASUS_TRX),R6300V1)
@@ -61,3 +76,4 @@ ifneq ($(WNDR),y)
 	$(call CREATE_INJECT_MODEL_GEN,freshtomato$(if $(filter-out $(BUILD_FN),),$(shell echo -$(BUILD_FN)))-$(branch_rev)$(fn_BUILD_USB)$(fn_NVRAM_SIZE)-$(current_TOMATO_VER)$(beta)$(current_V2)-$(current_BUILD_DESC).trx)
  endif
 endif
+endif # EA6500V1

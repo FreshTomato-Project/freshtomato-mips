@@ -722,6 +722,14 @@ config NVRAM_64K
         bool "Support nvram 64K"
         default n
 
+config EA6500V1
+	bool "Linksys EA6500 v1 SPI NVRAM layout"
+	depends on BCM947XX && NVRAM_64K && MTD_NFLASH && MTD_PARTITIONS
+	default n
+	help
+	  Use the 64 KB NVRAM region at 0xc0000 on the EA6500 v1.
+	  Enable only for the dedicated EA6500 v1 firmware.
+
 config DUAL_TRX
         bool "Support dual trx"
         default n

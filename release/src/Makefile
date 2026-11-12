@@ -316,6 +316,32 @@ define CREATE_INJECT_MODEL_BELKIN
 	rm -f router/target.info
 endef
 
+# EA6500 v1 stock CFE expects a raw gzip kernel followed by the SDK6 SquashFS.
+define CREATE_INJECT_MODEL_EA6500V1
+	$(eval SAN_IMAGE := $(shell echo $(1) | tr -d '"' | tr -d "'"))
+	mkdir -p router/mipsel-uclibc/target/rom/filename
+	rm -rf router/mipsel-uclibc/target/rom/filename/*
+	printf "" > router/mipsel-uclibc/target/rom/filename/$(SAN_IMAGE)
+	rm -f image/$(SAN_IMAGE) image/$(SAN_IMAGE).tmp ctools/piggy.gz ctools/target.squashfs
+	@echo "Creating Linksys EA6500 v1 firmware" > fpkg.log
+	@cat router/shared/tomato_version >> fpkg.log
+	ctools/mksquashfs router/mipsel-uclibc/target ctools/target.squashfs -noappend -all-root
+	gzip -9 -n -c ctools/piggy > ctools/piggy.gz
+	gzip -t ctools/piggy.gz
+	@set -e; \
+		trap 'rm -f image/$(SAN_IMAGE).tmp' EXIT; \
+		btools/fpkg -i ctools/piggy.gz -a 1024 -i ctools/target.squashfs -t image/$(SAN_IMAGE).tmp >> fpkg.log; \
+		size=$$(wc -c < image/$(SAN_IMAGE).tmp); \
+		if [ "$$size" -gt 25000000 ]; then \
+			echo "ERROR: EA6500 v1 image exceeds conservative 25 MB stock UI limit ($$size bytes)" >&2; \
+			exit 1; \
+		fi; \
+		mv image/$(SAN_IMAGE).tmp image/$(SAN_IMAGE)
+	cp fpkg.log image/fpkg_$(SAN_IMAGE).log
+	@cat fpkg.log
+	rm -f ctools/piggy.gz
+endef
+
 # prepare variables for filename
 fn_BUILD_USB = $(if $(filter $(current_BUILD_USB),"USB"),$(shell echo -$(current_BUILD_USB)))
 fn_NVRAM_SIZE = $(if $(filter $(NVRAM_SIZE),0),,$(shell echo -NVRAM$(NVRAM_SIZE)K))
@@ -409,7 +435,7 @@ what:
 # MIPS32 (r2|r1)
 # WNR3500LV2 (0|1)
 # KERN_SIZE_OPT_MORE NO_ZEBRA OPTIMIZE_SIZE_MORE BCMNAT SDHC TERMLIB ADVTHEMES BONDING
-# AC66U R6300V1 WNDR4500V1 WNDR4500V2 FULL_EXTRAS
+# AC66U R6300V1 WNDR4500V1 WNDR4500V2 EA6500V1 FULL_EXTRAS
 
 define RouterOptions
 	@( \
@@ -662,13 +688,23 @@ define RouterOptions
 	[ "$(R6300V1)" = "y" ] && model_flags=$$((model_flags + 1)); \
 	[ "$(WNDR4500V1)" = "y" ] && model_flags=$$((model_flags + 1)); \
 	[ "$(WNDR4500V2)" = "y" ] && model_flags=$$((model_flags + 1)); \
+	[ "$(EA6500V1)" = "y" ] && model_flags=$$((model_flags + 1)); \
 	if [ "$$model_flags" -gt 1 ]; then \
-		echo "ERROR: select only one RT-AC model discriminator (AC66U, R6300V1, WNDR4500V1 or WNDR4500V2)" >&2; \
+		echo "ERROR: select only one RT-AC model discriminator (AC66U, R6300V1, WNDR4500V1, WNDR4500V2 or EA6500V1)" >&2; \
 		exit 1; \
 	fi; \
 	if [ "$$model_flags" -gt 0 ] && [ "$(TARGET_VARIANT)" != "RTAC" ]; then \
 		echo "ERROR: RT-AC model discriminators require the RT-AC target family" >&2; \
 		exit 1; \
+	fi; \
+	if [ "$(EA6500V1)" = "y" ]; then \
+		if [ "$(MIPS32)" != "r2" ] || [ "$(NVRAM_64K)" != "y" ] || [ "$(NAND)" != "y" ] || [ "$(NVRAM_SIZE)" != "0" ] || [ "$(ASUS_TRX)" != "0" ]; then \
+			echo "ERROR: EA6500V1 requires MIPS R2, 64K NVRAM, NAND and no ASUS_TRX" >&2; \
+			exit 1; \
+		fi; \
+		config_y TCONFIG_EA6500V1; \
+	else \
+		config_n TCONFIG_EA6500V1; \
 	fi; \
 	if [ "$(AC66U)" = "y" ]; then \
 		config_y TCONFIG_AC66U; \
@@ -918,6 +954,14 @@ define KernelConfig
 	@( \
 	sed -i "/CONFIG_NVRAM_SIZE/d" $(1); \
 	echo "CONFIG_NVRAM_SIZE="$(NVRAM_SIZE) >>$(1); \
+	if [ "$(TARGET_VARIANT)" = "RTAC" ]; then \
+		sed -i "/^CONFIG_EA6500V1=/d; /^# CONFIG_EA6500V1 is not set$$/d" $(1); \
+		if [ "$(EA6500V1)" = "y" ]; then \
+			echo "CONFIG_EA6500V1=y" >>$(1); \
+		else \
+			echo "# CONFIG_EA6500V1 is not set" >>$(1); \
+		fi; \
+	fi; \
 	sed -i "/CONFIG_CC_OPTIMIZE_FOR_SIZE/d" $(1); \
 	if [ "$(KERN_SIZE_OPT)" = "y" ]; then \
 		echo "CONFIG_CC_OPTIMIZE_FOR_SIZE=y" >>$(1); \

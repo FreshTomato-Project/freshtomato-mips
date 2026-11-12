@@ -73,6 +73,7 @@ ifeq ($(CONFIG_BCMWL6),y)
 	@echo " w1800rz        Tenda W1800R AIO"
 	@echo " dir865le       D-link DIR-865L VPN"
 	@echo " dir865lo       D-link DIR-865L Mega-VPN"
+	@echo " ea6500v1e      Linksys EA6500 v1 VPN (experimental)"
 	@echo " r6300e         Netgear R6300V1 VPN"
 	@echo " r6300z         Netgear R6300V1 AIO"
 	@echo " wndr4500e      Netgear WNDR4500V1 VPN"

@@ -61,6 +61,9 @@
 #include <ctf/hndctf.h>
 #endif /* HNDCTF */
 #include "bcm947xx.h"
+#ifdef CONFIG_EA6500V1
+#include "ea6500v1.h"
+#endif
 #ifdef CONFIG_MTD_NFLASH
 #include "nflash.h"
 #endif
@@ -539,6 +542,27 @@ init_mtd_partitions(struct mtd_info *mtd, size_t size)
 
 	bootflags = boot_flags();
 
+#ifdef CONFIG_EA6500V1
+	/* The dedicated image requires SPI CFE/NVRAM and a NAND kernel. */
+	if (CHIPID(sih->chip) != BCM4706_CHIP_ID ||
+	    !nvram_match("modelNumber", "EA6500") ||
+	    !nvram_match("boardnum", "${serno}") ||
+	    !nvram_match("boardrev", "0x1103") ||
+	    mtd->type != MTD_NORFLASH || strcmp(mtd->name, "sflash") ||
+	    size != EA6500V1_SPI_SIZE || mtd->size != EA6500V1_SPI_SIZE ||
+	    !mtd->erasesize || EA6500V1_NVRAM_SIZE % mtd->erasesize ||
+	    NVRAM_SPACE != EA6500V1_NVRAM_SIZE ||
+	    (bootflags & (FLASH_BOOT_NFLASH | FLASH_KERNEL_NFLASH)) != FLASH_KERNEL_NFLASH ||
+	    boot_partition_size(SI_FLASH2) > EA6500V1_DEFAULTS_OFFSET) {
+		printk(KERN_ERR "EA6500v1: unexpected flash layout; SPI is read-only\n");
+		memset(bcm947xx_flash_parts, 0, sizeof(bcm947xx_flash_parts));
+		bcm947xx_flash_parts[0].name = "pmon";
+		bcm947xx_flash_parts[0].size = size;
+		bcm947xx_flash_parts[0].mask_flags = MTD_WRITEABLE;
+		return bcm947xx_flash_parts;
+	}
+#endif
+
 	if ((bootflags & FLASH_KERNEL_NFLASH) != FLASH_KERNEL_NFLASH) {
 		vmlz_off = 0;
 		rfs_off = lookup_flash_rootfs_offset(mtd, &vmlz_off, size);
@@ -635,6 +659,9 @@ init_mtd_partitions(struct mtd_info *mtd, size_t size)
 		bcm947xx_flash_parts[nparts].name = "pmon";
 		bcm947xx_flash_parts[nparts].size = bootsz;
 		bcm947xx_flash_parts[nparts].offset = top;
+#ifdef CONFIG_EA6500V1
+		bcm947xx_flash_parts[nparts].mask_flags = MTD_WRITEABLE;
+#endif
 		//bcm947xx_flash_parts[nparts].mask_flags = MTD_WRITEABLE; /* forces on read only */
 		offset = bcm947xx_flash_parts[nparts].size;
 		nparts++;
@@ -662,6 +689,11 @@ init_mtd_partitions(struct mtd_info *mtd, size_t size)
 	bcm947xx_flash_parts[nparts].name = "nvram";
 	bcm947xx_flash_parts[nparts].size = ROUNDUP(NVRAM_SPACE, mtd->erasesize);
 	bcm947xx_flash_parts[nparts].offset = size - bcm947xx_flash_parts[nparts].size;
+#ifdef CONFIG_EA6500V1
+	bcm947xx_flash_parts[nparts].offset = EA6500V1_NVRAM_OFFSET;
+	printk(KERN_NOTICE "EA6500v1: NVRAM partition at 0x%x size 0x%x\n",
+	       EA6500V1_NVRAM_OFFSET, EA6500V1_NVRAM_SIZE);
+#endif
 	nparts++;
 
 	return bcm947xx_flash_parts;

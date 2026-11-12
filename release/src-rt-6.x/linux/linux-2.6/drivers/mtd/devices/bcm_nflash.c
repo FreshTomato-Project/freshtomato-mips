@@ -390,6 +390,51 @@ nflash_mtd_erase(struct mtd_info *mtd, struct erase_info *erase)
 	}
 
 	for (i = new_addr; erase_blknum; i += blocksize) {
+#ifdef CONFIG_EA6500V1
+		/*
+		 * The range check before this loop assumes that all blocks
+		 * in the requested erase range are good. However, skipping
+		 * a known bad block (or marking a newly failed erase block
+		 * bad) advances i without decrementing erase_blknum.
+		 *
+		 * Without a check on each iteration, the physical erase
+		 * range can extend past the end of the MTD partition,
+		 * potentially erasing data in the next partition or
+		 * accessing the bad-block map beyond the device.
+		 *
+		 * On the EA6500 v1 this could destroy the stock recovery
+		 * image in the second NAND slot (starting at 0x02000000),
+		 * even though that slot is exposed as a read-only MTD
+		 * partition by the separate brcmnand driver.
+		 *
+		 * Return -ENOSPC if there are not enough good blocks left
+		 * in this partition. Earlier blocks may already be erased.
+		 *
+		 * Bad-block skipping is required to preserve the logical
+		 * erase length and must remain enabled. However, it must
+		 * not consume blocks belonging to an adjacent partition.
+		 *
+		 * If the partition does not contain enough good blocks,
+		 * the erase request cannot be completed safely.
+		 *
+		 * Erasing beyond the partition is not a valid way to
+		 * extend its usable capacity: nflash_mtd_write() already
+		 * enforces a partition boundary when skipping bad blocks.
+		 *
+		 * On some existing models the adjacent area is JFFS,
+		 * which may make this bug less noticeable during firmware
+		 * upgrades, but JFFS data can still be corrupted.
+		 *
+		 * TODO: Audit this shared driver and test this boundary
+		 * check on other NAND-based models before enabling it
+		 * globally. Keep legacy behavior for other targets until
+		 * that work is done (EA6500 v1 support, PR #72).
+		 */
+		if ((uint)i / blocksize >= part_end_blk) {
+			ret = -ENOSPC;
+			goto done;
+		}
+#endif
 		/* Skip bad block erase */
 		if (nflash->map[i / blocksize] != 0) {
 			continue;

@@ -39,6 +39,10 @@
 #include <hndmips.h>
 #include <hndsflash.h>
 #include <linux/delay.h>
+#ifdef CONFIG_EA6500V1
+#include <bcmdevs.h>
+#include "ea6500v1.h"
+#endif
 #ifdef NFLASH_SUPPORT
 #include <nflash.h>
 #endif
@@ -409,6 +413,32 @@ early_nvram_init(void)
 		base = KSEG1ADDR(SI_FLASH1);
 		lim = SI_FLASH1_SZ;
 	}
+#ifdef CONFIG_EA6500V1
+	/* The stock CFE stores live NVRAM and factory defaults separately. */
+	if (!sfl_info || CHIPID(sih->chip) != BCM4706_CHIP_ID ||
+	    lim != EA6500V1_SPI_SIZE || !sfl_info->blocksize ||
+	    EA6500V1_NVRAM_SIZE % sfl_info->blocksize ||
+	    NVRAM_SPACE != EA6500V1_NVRAM_SIZE) {
+		printk(KERN_ERR "EA6500v1: unexpected SPI/NVRAM geometry\n");
+		return -1;
+	}
+
+	header = (struct nvram_header *)KSEG1ADDR(base + EA6500V1_NVRAM_OFFSET);
+	if (nvram_valid(header)) {
+		printk(KERN_NOTICE "EA6500v1: NVRAM at 0x%x\n", EA6500V1_NVRAM_OFFSET);
+		goto found;
+	}
+
+	/* Only accept intact Broadcom-format factory defaults as a fallback. */
+	header = (struct nvram_header *)KSEG1ADDR(base + EA6500V1_DEFAULTS_OFFSET);
+	if (nvram_valid(header) && header->len >= sizeof(*header) + 2 &&
+	    nvram_calc_crc(header) == (uint8)header->crc_ver_init) {
+		printk(KERN_NOTICE "EA6500v1: using CFE factory defaults\n");
+		goto found;
+	}
+	printk(KERN_ERR "EA6500v1: no valid NVRAM or factory defaults\n");
+	return -1;
+#endif
 #ifdef NFLASH_SUPPORT
 	if (nfl_info != NULL) {
 		blocksize = nfl_info->blocksize;
@@ -1176,6 +1206,13 @@ dev_nvram_init(void)
 		nvram_mtd = get_mtd_device(NULL, i);
 		if (!IS_ERR(nvram_mtd)) {
 			if (!strcmp(nvram_mtd->name, "nvram") &&
+#ifdef CONFIG_EA6500V1
+			    nvram_mtd->type == MTD_NORFLASH &&
+			    nvram_mtd->size == EA6500V1_NVRAM_SIZE &&
+			    nvram_mtd->erasesize &&
+			    EA6500V1_NVRAM_SIZE % nvram_mtd->erasesize == 0 &&
+			    (nvram_mtd->flags & MTD_WRITEABLE) &&
+#endif
 			    nvram_mtd->size >= NVRAM_SPACE) {
 				break;
 			}
@@ -1184,6 +1221,15 @@ dev_nvram_init(void)
 	}
 	if (i >= MAX_MTD_DEVICES)
 		nvram_mtd = NULL;
+#endif
+
+#ifdef CONFIG_EA6500V1
+	if (!nvram_mtd) {
+		printk(KERN_ERR "EA6500v1: no safe NVRAM MTD partition\n");
+		for (page = virt_to_page(nvram_buf); page <= end; page++)
+			ClearPageReserved(page);
+		return -ENODEV;
+	}
 #endif
 
 	/* Initialize hash table lock */
