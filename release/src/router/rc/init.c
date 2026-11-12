@@ -4379,6 +4379,9 @@ static int init_nvram(void)
 			nvram_set("pci/1/1/ccode", nvram_safe_get("ccode"));
 			nvram_set("regulation_domain_5G", nvram_safe_get("ccode"));
 		}
+		/* CFE (dual-image) bumps partialboots on every boot and switches to the other
+		 * NAND slot once it exceeds maxpartialboots: report a successful boot */
+		nvram_set("partialboots", "0");
 		break;
 #endif /* CONFIG_BCMWL6 */
 	case MODEL_WNR3500LV2:
