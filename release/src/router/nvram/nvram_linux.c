@@ -193,8 +193,12 @@ int nvram_commit(void)
 			cprintf("commit: error\n");
 		}
 	}
-	else
+	else {
 		cprintf("commit: system busy\n");
+#ifdef TCONFIG_EA6500V1
+		r = -EBUSY;
+#endif
+	}
 
 	return r;
 }
