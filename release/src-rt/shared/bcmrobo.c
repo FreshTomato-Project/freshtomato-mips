@@ -110,6 +110,7 @@
 #define REG_VLAN_PMAP	0x20	/* 5325: VLAN Priority Re-map register */
 
 #define VLAN_NUMVLANS	16	/* # of VLANs */
+#define ROBO53115_VLAN_COUNT	4095	/* VIDs 0-4094; VID 0 is reserved */
 
 
 /* ARL/VLAN Table Access page registers */
@@ -849,6 +850,8 @@ bcm_robo_config_vlan(robo_info_t *robo, uint8 *mac_addr)
 	pdesc_t *pdesc;
 	int pdescsz;
 	uint16 vid, vid0;
+	uint16 slot_vid[VLAN_NUMVLANS];
+	int map_vid = 0;
 	uint8 arl_entry[8] = { 0 }, arl_entry1[8] = { 0 };
 
 	/* Enable management interface access */
@@ -924,22 +927,63 @@ bcm_robo_config_vlan(robo_info_t *robo, uint8 *mac_addr)
 
 	vid0 = getintvar(robo->vars, "vlan0tag");
 
-	/* setup each vlan. max. 16 vlans. */
-	/* force vlan id to be equal to vlan number */
-	for (vid = 0; vid < VLAN_NUMVLANS; vid ++) {
+#ifndef _CFE_
+	/*
+	 * BCM53115 supports a full 12-bit VLAN table. Keep the legacy
+	 * 16-slot path for other switches, but resolve each FreshTomato
+	 * slot to its actual VID on BCM53115, as in RT-N.
+	 * Match the RT userspace fallback for missing/invalid vlanXvid.
+	 */
+	if (robo->devid == DEVID53115) {
+		char vlanvid[] = "vlanXXXXvid";
+		char *nvvid;
+		int slot, mapped_vid;
+
+		for (slot = 0; slot < VLAN_NUMVLANS; slot++) {
+			sprintf(vlanvid, "vlan%dvid", slot);
+			nvvid = getvar(robo->vars, vlanvid);
+			mapped_vid = nvvid ? bcm_atoi(nvvid) : 0;
+			if (mapped_vid < 1 || mapped_vid >= ROBO53115_VLAN_COUNT)
+				mapped_vid = vid0 | slot;
+			slot_vid[slot] = mapped_vid;
+		}
+
+		map_vid = 1;
+		/* vid now represents the actual VID, not the slot number. */
+		vid0 = 0;
+	}
+#endif /* !_CFE_ */
+
+	/* Clear unused VID memberships on BCM53115, as in RT-N. */
+	for (vid = 0; vid < (map_vid ? ROBO53115_VLAN_COUNT : VLAN_NUMVLANS); vid ++) {
 		char vlanports[] = "vlanXXXXports";
 		char port[] = "XXXX", *ports, *next, *cur;
 		uint32 untag = 0;
 		uint32 member = 0;
 		int pid, len;
 
-		/* no members if VLAN id is out of limitation */
-		if (vid > VLAN_MAXVID)
-			goto vlan_setup;
-
 		/* get vlan member ports from nvram */
-		sprintf(vlanports, "vlan%dports", vid);
-		ports = getvar(robo->vars, vlanports);
+		if (map_vid) {
+			int slot;
+
+			ports = NULL;
+			for (slot = 0; slot < VLAN_NUMVLANS; slot++) {
+				if (slot_vid[slot] != vid)
+					continue;
+				sprintf(vlanports, "vlan%dports", slot);
+				ports = getvar(robo->vars, vlanports);
+				if (ports && *ports)
+					break;
+				ports = NULL;
+			}
+		} else {
+			/* no members if VLAN id is out of limitation */
+			if (vid > VLAN_MAXVID)
+				goto vlan_setup;
+
+			sprintf(vlanports, "vlan%dports", vid);
+			ports = getvar(robo->vars, vlanports);
+		}
 
 		/* In 539x vid == 0 us invalid?? */
 		if ((robo->devid != DEVID5325) && (robo->devid != DEVID5397) && (vid == 0)) {
@@ -1034,15 +1078,22 @@ bcm_robo_config_vlan(robo_info_t *robo, uint8 *mac_addr)
 			         100 /* usec */);
 		} else {
 			/* Set the VLAN Id in VLAN ID Index Register */
-			val8 = vid;
-			robo->ops->write_reg(robo, PAGE_VTBL, REG_VTBL_VINDX,
-			                     &val8, sizeof(val8));
+			if (map_vid) {
+				/* BCM53115: 12-bit VID in a 16-bit register. */
+				val16 = vid;
+				robo->ops->write_reg(robo, PAGE_VTBL, REG_VTBL_VINDX,
+				                     &val16, sizeof(val16));
+			} else {
+				val8 = vid;
+				robo->ops->write_reg(robo, PAGE_VTBL, REG_VTBL_VINDX,
+				                     &val8, sizeof(val8));
+			}
 
 			/* Set the MAC addr and VLAN Id in ARL Table MAC/VID Entry 0
 			 * Register.
 			 */
-			arl_entry[6] = vid;
-			arl_entry[7] = 0x0;
+			arl_entry[6] = vid & 0xff;
+			arl_entry[7] = map_vid ? (vid >> 8) : 0;
 			robo->ops->write_reg(robo, PAGE_VTBL, REG_VTBL_ARL_E0,
 			                     arl_entry, sizeof(arl_entry));
 
@@ -1128,6 +1179,19 @@ vlan_setup:
 			        0);	        /* write */
 			robo->ops->write_reg(robo, PAGE_VTBL, vtbla, &val8,
 			                     sizeof(val8));
+			if (map_vid) {
+				/* Complete this write before programming the next VID. */
+				SPINWAIT((robo->ops->read_reg(robo, PAGE_VTBL, vtbla,
+				         &val8, sizeof(val8)), ((val8 & 0x80) != 0)),
+				         100 /* usec */);
+				if (val8 & 0x80) {
+					ET_ERROR(("robo_config_vlan: VLAN table write timeout (VID %d)\n",
+					          vid));
+					if (robo->ops->disable_mgmtif)
+						robo->ops->disable_mgmtif(robo);
+					return -1;
+				}
+			}
 		}
 	}
 
