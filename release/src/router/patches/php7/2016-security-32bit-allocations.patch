@@ -1,0 +1,94 @@
+diff --git php7/Zend/zend_operators.c php7/Zend/zend_operators.c
+index 584d5d8..6532377 100644
+--- php7/Zend/zend_operators.c
++++ php7/Zend/zend_operators.c
+@@ -1759,7 +1759,7 @@ ZEND_API int ZEND_FASTCALL concat_function(zval *result, zval *op1, zval *op2) /
+ 		size_t result_len = op1_len + op2_len;
+ 		zend_string *result_str;
+ 
+-		if (UNEXPECTED(op1_len > SIZE_MAX - op2_len)) {
++		if (UNEXPECTED(op1_len > ZSTR_MAX_LEN - op2_len)) {
+ 			zend_throw_error(NULL, "String size overflow");
+ 			if (UNEXPECTED(use_copy1)) {
+ 				zval_dtor(op1);
+diff --git php7/Zend/zend_string.h php7/Zend/zend_string.h
+index c07c1e4..2036950 100644
+--- php7/Zend/zend_string.h
++++ php7/Zend/zend_string.h
+@@ -218,12 +218,13 @@ static zend_always_inline zend_string *zend_string_realloc(zend_string *s, size_
+ 			ZSTR_LEN(ret) = len;
+ 			zend_string_forget_hash_val(ret);
+ 			return ret;
+-		} else {
+-			GC_REFCOUNT(s)--;
+ 		}
+ 	}
+ 	ret = zend_string_alloc(len, persistent);
+ 	memcpy(ZSTR_VAL(ret), ZSTR_VAL(s), MIN(len, ZSTR_LEN(s)) + 1);
++	if (!ZSTR_IS_INTERNED(s)) {
++		GC_REFCOUNT(s)--;
++	}
+ 	return ret;
+ }
+ 
+@@ -238,12 +239,13 @@ static zend_always_inline zend_string *zend_string_extend(zend_string *s, size_t
+ 			ZSTR_LEN(ret) = len;
+ 			zend_string_forget_hash_val(ret);
+ 			return ret;
+-		} else {
+-			GC_REFCOUNT(s)--;
+ 		}
+ 	}
+ 	ret = zend_string_alloc(len, persistent);
+ 	memcpy(ZSTR_VAL(ret), ZSTR_VAL(s), ZSTR_LEN(s) + 1);
++	if (!ZSTR_IS_INTERNED(s)) {
++		GC_REFCOUNT(s)--;
++	}
+ 	return ret;
+ }
+ 
+@@ -258,12 +260,13 @@ static zend_always_inline zend_string *zend_string_truncate(zend_string *s, size
+ 			ZSTR_LEN(ret) = len;
+ 			zend_string_forget_hash_val(ret);
+ 			return ret;
+-		} else {
+-			GC_REFCOUNT(s)--;
+ 		}
+ 	}
+ 	ret = zend_string_alloc(len, persistent);
+ 	memcpy(ZSTR_VAL(ret), ZSTR_VAL(s), len + 1);
++	if (!ZSTR_IS_INTERNED(s)) {
++		GC_REFCOUNT(s)--;
++	}
+ 	return ret;
+ }
+ 
+@@ -277,12 +280,13 @@ static zend_always_inline zend_string *zend_string_safe_realloc(zend_string *s,
+ 			ZSTR_LEN(ret) = (n * m) + l;
+ 			zend_string_forget_hash_val(ret);
+ 			return ret;
+-		} else {
+-			GC_REFCOUNT(s)--;
+ 		}
+ 	}
+ 	ret = zend_string_safe_alloc(n, m, l, persistent);
+ 	memcpy(ZSTR_VAL(ret), ZSTR_VAL(s), MIN((n * m) + l, ZSTR_LEN(s)) + 1);
++	if (!ZSTR_IS_INTERNED(s)) {
++		GC_REFCOUNT(s)--;
++	}
+ 	return ret;
+ }
+ 
+diff --git php7/ext/mysqli/mysqli_api.c php7/ext/mysqli/mysqli_api.c
+index 9a731f3..b2cf94a 100644
+--- php7/ext/mysqli/mysqli_api.c
++++ php7/ext/mysqli/mysqli_api.c
+@@ -1967,7 +1967,7 @@ PHP_FUNCTION(mysqli_real_escape_string) {
+ 	}
+ 	MYSQLI_FETCH_RESOURCE_CONN(mysql, mysql_link, MYSQLI_STATUS_VALID);
+ 
+-	newstr = zend_string_alloc(2 * escapestr_len, 0);
++	newstr = zend_string_safe_alloc(2, escapestr_len, 0, 0);
+ 	ZSTR_LEN(newstr) = mysql_real_escape_string(mysql->mysql, ZSTR_VAL(newstr), escapestr, escapestr_len);
+ 	newstr = zend_string_truncate(newstr, ZSTR_LEN(newstr), 0);
+ 

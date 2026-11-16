@@ -1,0 +1,207 @@
+diff --git php7/ext/standard/array.c php7/ext/standard/array.c
+index 46e83409..8da33a9d 100644
+--- php7/ext/standard/array.c
++++ php7/ext/standard/array.c
+@@ -3836,7 +3836,7 @@ static inline void php_array_merge_or_replace_wrapper(INTERNAL_FUNCTION_PARAMETE
+ 	} else {
+ 		zval *src_entry;
+ 		HashTable *src, *dest;
+-		uint32_t count = 0;
++		uint64_t count = 0;
+ 
+ 		for (i = 0; i < argc; i++) {
+ 			zval *arg = args + i;
+@@ -3848,6 +3848,11 @@ static inline void php_array_merge_or_replace_wrapper(INTERNAL_FUNCTION_PARAMETE
+ 			count += zend_hash_num_elements(Z_ARRVAL_P(arg));
+ 		}
+ 
++		if (UNEXPECTED(count >= HT_MAX_SIZE)) {
++			zend_throw_error(NULL, "The total number of elements must be lower than %u", HT_MAX_SIZE);
++			return;
++		}
++
+ 		arg = args;
+ 		src  = Z_ARRVAL_P(arg);
+ 		/* copy first array */
+diff --git php7/ext/standard/crypt.c php7/ext/standard/crypt.c
+index e873ca79..c391cfd3 100644
+--- php7/ext/standard/crypt.c
++++ php7/ext/standard/crypt.c
+@@ -156,6 +156,7 @@ PHPAPI zend_string *php_crypt(const char *password, const int pass_len, const ch
+ 		} else if (
+ 				salt[0] == '$' &&
+ 				salt[1] == '2' &&
++				salt[2] != 0 &&
+ 				salt[3] == '$') {
+ 			char output[PHP_MAX_SALT_LEN + 1];
+ 
+diff --git php7/ext/standard/crypt_blowfish.c php7/ext/standard/crypt_blowfish.c
+index 5cf30671..e923b55e 100644
+--- php7/ext/standard/crypt_blowfish.c
++++ php7/ext/standard/crypt_blowfish.c
+@@ -377,7 +377,6 @@ static unsigned char BF_atoi64[0x60] = {
+ #define BF_safe_atoi64(dst, src) \
+ { \
+ 	tmp = (unsigned char)(src); \
+-	if (tmp == '$') break; /* PHP hack */ \
+ 	if ((unsigned int)(tmp -= 0x20) >= 0x60) return -1; \
+ 	tmp = BF_atoi64[tmp]; \
+ 	if (tmp > 63) return -1; \
+@@ -405,13 +404,6 @@ static int BF_decode(BF_word *dst, const char *src, int size)
+ 		*dptr++ = ((c3 & 0x03) << 6) | c4;
+ 	} while (dptr < end);
+ 
+-	if (end - dptr == size) {
+-		return -1;
+-	}
+-
+-	while (dptr < end) /* PHP hack */
+-		*dptr++ = 0;
+-
+ 	return 0;
+ }
+ 
+diff --git php7/ext/standard/filters.c php7/ext/standard/filters.c
+index 03e5e11d..2b58c65e 100644
+--- php7/ext/standard/filters.c
++++ php7/ext/standard/filters.c
+@@ -788,7 +788,7 @@ static php_conv_err_t php_conv_qprint_encode_convert(php_conv_qprint_encode *ins
+ 	lb_ptr = inst->lb_ptr;
+ 	lb_cnt = inst->lb_cnt;
+ 
+-	if ((in_pp == NULL || in_left_p == NULL) && (lb_ptr >=lb_cnt)) {
++	if (in_pp == NULL || in_left_p == NULL) {
+ 		return PHP_CONV_ERR_SUCCESS;
+ 	}
+ 
+@@ -1016,7 +1016,7 @@ static php_conv_err_t php_conv_qprint_decode_convert(php_conv_qprint_decode *ins
+ 	lb_ptr = inst->lb_ptr;
+ 	lb_cnt = inst->lb_cnt;
+ 
+-	if ((in_pp == NULL || in_left_p == NULL) && lb_cnt == lb_ptr) {
++	if (in_pp == NULL || in_left_p == NULL) {
+ 		if (inst->scan_stat != 0) {
+ 			return PHP_CONV_ERR_UNEXPECTED_EOS;
+ 		}
+@@ -1113,8 +1113,7 @@ static php_conv_err_t php_conv_qprint_decode_convert(php_conv_qprint_decode *ins
+ 					*ps == (unsigned char)inst->lbchars[lb_cnt]) {
+ 					lb_cnt++;
+ 					scan_stat = 5;
+-				}
+-				if (*ps != '\t' && *ps != ' ') {
++				} else if (*ps != '\t' && *ps != ' ') {
+ 					err = PHP_CONV_ERR_INVALID_SEQ;
+ 					goto out;
+ 				}
+@@ -1122,6 +1121,9 @@ static php_conv_err_t php_conv_qprint_decode_convert(php_conv_qprint_decode *ins
+ 			} break;
+ 
+ 			case 5: {
++				if (icnt == 0) {
++					goto out;
++				}
+ 				if (!inst->lbchars && lb_cnt == 1 && *ps == '\n') {
+ 					/* auto-detect soft line breaks, found network line break */
+ 					lb_cnt = lb_ptr = 0;
+@@ -1135,15 +1137,13 @@ static php_conv_err_t php_conv_qprint_decode_convert(php_conv_qprint_decode *ins
+ 					/* soft line break */
+ 					lb_cnt = lb_ptr = 0;
+ 					scan_stat = 0;
+-				} else if (icnt > 0) {
++				} else {
+ 					if (*ps == (unsigned char)inst->lbchars[lb_cnt]) {
+ 						lb_cnt++;
+ 						ps++, icnt--;
+ 					} else {
+ 						scan_stat = 6; /* no break for short-cut */
+ 					}
+-				} else {
+-					goto out;
+ 				}
+ 			} break;
+ 
+diff --git php7/ext/standard/http_fopen_wrapper.c php7/ext/standard/http_fopen_wrapper.c
+index be23679d..e1253649 100644
+--- php7/ext/standard/http_fopen_wrapper.c
++++ php7/ext/standard/http_fopen_wrapper.c
+@@ -176,6 +176,11 @@ static php_stream *php_stream_url_wrap_http_ex(php_stream_wrapper *wrapper,
+ 			return NULL;
+ 		}
+ 
++		/* Should we send the entire path in the request line, default to no. */
++		if (context && (tmpzval = php_stream_context_get_option(context, "http", "request_fulluri")) != NULL) {
++			request_fulluri = zend_is_true(tmpzval);
++		}
++
+ 		use_ssl = resource->scheme && (strlen(resource->scheme) > 4) && resource->scheme[4] == 's';
+ 		/* choose default ports */
+ 		if (use_ssl && resource->port == 0)
+@@ -195,6 +200,13 @@ static php_stream *php_stream_url_wrap_http_ex(php_stream_wrapper *wrapper,
+ 		}
+ 	}
+ 
++	if (request_fulluri && (strchr(path, '\n') != NULL || strchr(path, '\r') != NULL)) {
++		php_stream_wrapper_log_error(wrapper, options, "HTTP wrapper full URI path does not allow CR or LF characters");
++		php_url_free(resource);
++		efree(transport_string);
++		return NULL;
++	}
++
+ 	if (context && (tmpzval = php_stream_context_get_option(context, wrapper->wops->label, "timeout")) != NULL) {
+ 		double d = zval_get_double(tmpzval);
+ #ifndef PHP_WIN32
+@@ -375,12 +387,6 @@ finish:
+ 		smart_str_appends(&req_buf, "GET ");
+ 	}
+ 
+-	/* Should we send the entire path in the request line, default to no. */
+-	if (!request_fulluri && context &&
+-		(tmpzval = php_stream_context_get_option(context, "http", "request_fulluri")) != NULL) {
+-		request_fulluri = zend_is_true(tmpzval);
+-	}
+-
+ 	if (request_fulluri) {
+ 		/* Ask for everything */
+ 		smart_str_appends(&req_buf, path);
+diff --git php7/ext/standard/metaphone.c php7/ext/standard/metaphone.c
+index def371b5..70453ee4 100644
+--- php7/ext/standard/metaphone.c
++++ php7/ext/standard/metaphone.c
+@@ -124,10 +124,10 @@ char _codes[26] =
+ 
+ /* Allows us to safely look ahead an arbitrary # of letters */
+ /* I probably could have just used strlen... */
+-static char Lookahead(char *word, int how_far)
++static char Lookahead(char *word, size_t how_far)
+ {
+ 	char letter_ahead = '\0';	/* null by default */
+-	int idx;
++	size_t idx;
+ 	for (idx = 0; word[idx] != '\0' && idx < how_far; idx++);
+ 	/* Edge forward in the string... */
+ 
+@@ -169,7 +169,7 @@ static char Lookahead(char *word, int how_far)
+  */
+ static int metaphone(unsigned char *word, size_t word_len, zend_long max_phonemes, zend_string **phoned_word, int traditional)
+ {
+-	int w_idx = 0;				/* point in the phonization we're at. */
++	size_t w_idx = 0;				/* point in the phonization we're at. */
+ 	size_t p_idx = 0;				/* end of the phoned phrase */
+ 	size_t max_buffer_len = 0;		/* maximum length of the destination buffer */
+ 
+diff --git php7/ext/standard/password.c php7/ext/standard/password.c
+index c92925b9..4944369b 100644
+--- php7/ext/standard/password.c
++++ php7/ext/standard/password.c
+@@ -438,6 +438,11 @@ PHP_FUNCTION(password_hash)
+ 					cost = zval_get_long(option_buffer);
+ 				}
+ 
++				if (memchr(ZSTR_VAL(password), '\0', ZSTR_LEN(password))) {
++					php_error_docref(NULL, E_WARNING, "Bcrypt password must not contain null character");
++					RETURN_NULL();
++				}
++
+ 				if (cost < 4 || cost > 31) {
+ 					php_error_docref(NULL, E_WARNING, "Invalid bcrypt cost parameter specified: " ZEND_LONG_FMT, cost);
+ 					RETURN_NULL();

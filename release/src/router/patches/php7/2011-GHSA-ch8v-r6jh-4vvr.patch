@@ -1,0 +1,13 @@
+diff --git php7/ext/filter/sanitizing_filters.c php7/ext/filter/sanitizing_filters.c
+index 9b0a3aa..c2e0665 100644
+--- php7/ext/filter/sanitizing_filters.c
++++ php7/ext/filter/sanitizing_filters.c
+@@ -71,7 +71,7 @@ static void php_filter_encode_url(zval *value, const unsigned char* chars, const
+ 	unsigned char *e = s + char_len;
+ 	zend_string *str;
+ 
+-	memset(tmp, 1, sizeof(tmp)-1);
++	memset(tmp, 1, sizeof(tmp));
+ 
+ 	while (s < e) {
+ 		tmp[*s++] = '\0';

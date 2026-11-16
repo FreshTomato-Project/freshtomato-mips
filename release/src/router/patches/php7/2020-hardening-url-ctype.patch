@@ -1,0 +1,42 @@
+--- php7/ext/standard/url.c
++++ php7/ext/standard/url.c
+@@ -109,7 +109,7 @@
+ 		p = s;
+ 		while (p < e) {
+ 			/* scheme = 1*[ lowalpha | digit | "+" | "-" | "." ] */
+-			if (!isalpha(*p) && !isdigit(*p) && *p != '+' && *p != '.' && *p != '-') {
++			if (!isalpha((unsigned char) *p) && !isdigit((unsigned char) *p) && *p != '+' && *p != '.' && *p != '-') {
+ 				if (e + 1 < ue && e < s + strcspn(s, "?#")) {
+ 					goto parse_port;
+ 				} else if (s + 1 < ue && *s == '/' && *(s + 1) == '/') { /* relative-scheme URL */
+@@ -138,7 +138,7 @@
+ 			 * correctly parse things like a.com:80
+ 			 */
+ 			p = e + 1;
+-			while (p < ue && isdigit(*p)) {
++			while (p < ue && isdigit((unsigned char) *p)) {
+ 				p++;
+ 			}
+ 
+@@ -554,8 +554,8 @@
+ 		if (*data == '+') {
+ 			*dest = ' ';
+ 		}
+-		else if (*data == '%' && len >= 2 && isxdigit((int) *(data + 1))
+-				 && isxdigit((int) *(data + 2))) {
++		else if (*data == '%' && len >= 2 && isxdigit((unsigned char) *(data + 1))
++				 && isxdigit((unsigned char) *(data + 2))) {
+ #ifndef CHARSET_EBCDIC
+ 			*dest = (char) php_htoi(data + 1);
+ #else
+@@ -646,8 +646,8 @@
+ 	char *data = str;
+ 
+ 	while (len--) {
+-		if (*data == '%' && len >= 2 && isxdigit((int) *(data + 1))
+-			&& isxdigit((int) *(data + 2))) {
++		if (*data == '%' && len >= 2 && isxdigit((unsigned char) *(data + 1))
++			&& isxdigit((unsigned char) *(data + 2))) {
+ #ifndef CHARSET_EBCDIC
+ 			*dest = (char) php_htoi(data + 1);
+ #else

@@ -1,0 +1,115 @@
+diff --git php7/ext/filter/logical_filters.c php7/ext/filter/logical_filters.c
+index b2d0264b..f91aa12d 100644
+--- php7/ext/filter/logical_filters.c
++++ php7/ext/filter/logical_filters.c
+@@ -81,7 +81,7 @@
+ #define FORMAT_IPV4    4
+ #define FORMAT_IPV6    6
+ 
+-static int _php_filter_validate_ipv6(char *str, size_t str_len);
++static int _php_filter_validate_ipv6(const char *str, size_t str_len);
+ 
+ static int php_filter_parse_int(const char *str, size_t str_len, zend_long *ret) { /* {{{ */
+ 	zend_long ctx_value;
+@@ -514,6 +514,32 @@ void php_filter_validate_domain(PHP_INPUT_FILTER_PARAM_DECL) /* {{{ */
+ }
+ /* }}} */
+ 
++static int is_userinfo_valid(char *str)
++{
++	const char *valid = "-._~!$&'()*+,;=:";
++	const char *p = str;
++	size_t len = strlen(str);
++
++	while (p - str < len) {
++		if (isalpha(*p) || isdigit(*p) || strchr(valid, *p)) {
++			p++;
++		} else if (*p == '%' && p - str <= len - 3 && isdigit(*(p+1)) && isxdigit(*(p+2))) {
++			p += 3;
++		} else {
++			return 0;
++		}
++	}
++	return 1;
++}
++
++static zend_bool php_filter_is_valid_ipv6_hostname(const char *s, size_t l)
++{
++	const char *e = s + l;
++	const char *t = e - 1;
++
++	return *s == '[' && *t == ']' && _php_filter_validate_ipv6(s + 1, l - 2);
++}
++
+ void php_filter_validate_url(PHP_INPUT_FILTER_PARAM_DECL) /* {{{ */
+ {
+ 	php_url *url;
+@@ -533,7 +559,7 @@ void php_filter_validate_url(PHP_INPUT_FILTER_PARAM_DECL) /* {{{ */
+ 	}
+ 
+ 	if (url->scheme != NULL && (!strcasecmp(url->scheme, "http") || !strcasecmp(url->scheme, "https"))) {
+-		char *e, *s, *t;
++		const char *s;
+ 		size_t l;
+ 
+ 		if (url->host == NULL) {
+@@ -542,17 +568,14 @@ void php_filter_validate_url(PHP_INPUT_FILTER_PARAM_DECL) /* {{{ */
+ 
+ 		s = url->host;
+ 		l = strlen(s);
+-		e = url->host + l;
+-		t = e - 1;
+-
+-		/* An IPv6 enclosed by square brackets is a valid hostname */
+-		if (*s == '[' && *t == ']' && _php_filter_validate_ipv6((s + 1), l - 2)) {
+-			php_url_free(url);
+-			return;
+-		}
+ 
+-		// Validate domain
+-		if (!_php_filter_validate_domain(url->host, l, FILTER_FLAG_HOSTNAME)) {
++		if (
++			/* An IPv6 enclosed by square brackets is a valid hostname.*/
++			!php_filter_is_valid_ipv6_hostname(s, l) &&
++			/* Validate domain.
++			 * This includes a loose check for an IPv4 address. */
++			!_php_filter_validate_domain(url->host, l, FILTER_FLAG_HOSTNAME)
++		) {
+ 			php_url_free(url);
+ 			RETURN_VALIDATION_FAILED
+ 		}
+@@ -568,6 +591,15 @@ bad_url:
+ 		php_url_free(url);
+ 		RETURN_VALIDATION_FAILED
+ 	}
++
++	if ((url->user != NULL && !is_userinfo_valid(url->user))
++		|| (url->pass != NULL && !is_userinfo_valid(url->pass))
++	) {
++		php_url_free(url);
++		RETURN_VALIDATION_FAILED
++
++	}
++
+ 	php_url_free(url);
+ }
+ /* }}} */
+@@ -674,15 +706,15 @@ static int _php_filter_validate_ipv4(char *str, size_t str_len, int *ip) /* {{{
+ }
+ /* }}} */
+ 
+-static int _php_filter_validate_ipv6(char *str, size_t str_len) /* {{{ */
++static int _php_filter_validate_ipv6(const char *str, size_t str_len) /* {{{ */
+ {
+ 	int compressed = 0;
+ 	int blocks = 0;
+ 	int n;
+ 	char *ipv4;
+-	char *end;
++	const char *end;
+ 	int ip4elm[4];
+-	char *s = str;
++	const char *s = str;
+ 
+ 	if (!memchr(str, ':', str_len)) {
+ 		return 0;
