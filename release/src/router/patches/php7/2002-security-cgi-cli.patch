@@ -1,0 +1,99 @@
+diff --git php7/sapi/cgi/cgi_main.c php7/sapi/cgi/cgi_main.c
+index 16bb2126..205d559f 100644
+--- php7/sapi/cgi/cgi_main.c
++++ php7/sapi/cgi/cgi_main.c
+@@ -1830,7 +1830,6 @@ int main(int argc, char *argv[])
+ 	int status = 0;
+ #endif
+ 	char *query_string;
+-	char *decoded_query_string;
+ 	int skip_getopt = 0;
+ 
+ #ifdef HAVE_SIGNAL_H
+@@ -1881,10 +1880,20 @@ int main(int argc, char *argv[])
+ 		}
+ 	}
+ 
++	/* Apache CGI will pass the query string to the command line if it doesn't contain a '='.
++	 * This can create an issue where a malicious request can pass command line arguments to
++	 * the executable. Ideally we skip argument parsing when we're in cgi or fastcgi mode,
++	 * but that breaks PHP scripts on Linux with a hashbang: `#!/php-cgi -d option=value`.
++	 * Therefore, this code only prevents passing arguments if the query string starts with a '-'.
++	 * Similarly, scripts spawned in subprocesses on Windows may have the same issue.
++	 * However, Windows has lots of conversion rules and command line parsing rules that
++	 * are too difficult and dangerous to reliably emulate. */
+ 	if((query_string = getenv("QUERY_STRING")) != NULL && strchr(query_string, '=') == NULL) {
+-		/* we've got query string that has no = - apache CGI will pass it to command line */
++#ifdef PHP_WIN32
++		skip_getopt = cgi || fastcgi;
++#else
+ 		unsigned char *p;
+-		decoded_query_string = strdup(query_string);
++		char *decoded_query_string = strdup(query_string);
+ 		php_url_decode(decoded_query_string, strlen(decoded_query_string));
+ 		for (p = (unsigned char *)decoded_query_string; *p &&  *p <= ' '; p++) {
+ 			/* skip all leading spaces */
+@@ -1892,7 +1901,9 @@ int main(int argc, char *argv[])
+ 		if(*p == '-') {
+ 			skip_getopt = 1;
+ 		}
++
+ 		free(decoded_query_string);
++#endif
+ 	}
+ 
+ 	while (!skip_getopt && (c = php_getopt(argc, argv, OPTIONS, &php_optarg, &php_optind, 0, 2)) != -1) {
+@@ -1981,18 +1992,17 @@ int main(int argc, char *argv[])
+ 
+ 	/* check force_cgi after startup, so we have proper output */
+ 	if (cgi && CGIG(force_redirect)) {
+-		/* Apache will generate REDIRECT_STATUS,
+-		 * Netscape and redirect.so will generate HTTP_REDIRECT_STATUS.
+-		 * redirect.so and installation instructions available from
+-		 * http://www.koehntopp.de/php.
+-		 *   -- kk@netuse.de
+-		 */
+-		if (!getenv("REDIRECT_STATUS") &&
+-			!getenv ("HTTP_REDIRECT_STATUS") &&
+-			/* this is to allow a different env var to be configured
+-			 * in case some server does something different than above */
+-			(!CGIG(redirect_status_env) || !getenv(CGIG(redirect_status_env)))
+-		) {
++		/* This is to allow a different environment variable to be configured
++		 * in case the we cannot auto-detect which environment variable to use.
++		 * Checking this first to allow user overrides in case the environment
++		 * variable can be set by an untrusted party. */
++		const char *redirect_status_env = CGIG(redirect_status_env);
++		if (!redirect_status_env) {
++			/* Apache will generate REDIRECT_STATUS. */
++			redirect_status_env = "REDIRECT_STATUS";
++		}
++
++		if (!getenv(redirect_status_env)) {
+ 			zend_try {
+ 				SG(sapi_headers).http_response_code = 400;
+ 				PUTS("<b>Security Alert!</b> The PHP CGI cannot be accessed directly.\n\n\
+diff --git php7/sapi/cli/php_cli_server.c php7/sapi/cli/php_cli_server.c
+index cdcd93ac..5de98ad1 100644
+--- php7/sapi/cli/php_cli_server.c
++++ php7/sapi/cli/php_cli_server.c
+@@ -1801,8 +1801,6 @@ static size_t php_cli_server_client_send_through(php_cli_server_client *client,
+ 
+ static void php_cli_server_client_populate_request_info(const php_cli_server_client *client, sapi_request_info *request_info) /* {{{ */
+ {
+-	char *val;
+-
+ 	request_info->request_method = php_http_method_str(client->request.request_method);
+ 	request_info->proto_num = client->request.protocol_version;
+ 	request_info->request_uri = client->request.request_uri;
+@@ -1810,9 +1808,7 @@ static void php_cli_server_client_populate_request_info(const php_cli_server_cli
+ 	request_info->query_string = client->request.query_string;
+ 	request_info->content_length = client->request.content_len;
+ 	request_info->auth_user = request_info->auth_password = request_info->auth_digest = NULL;
+-	if (NULL != (val = zend_hash_str_find_ptr(&client->request.headers, "content-type", sizeof("content-type")-1))) {
+-		request_info->content_type = val;
+-	}
++	request_info->content_type = zend_hash_str_find_ptr(&client->request.headers, "content-type", sizeof("content-type")-1);
+ } /* }}} */
+ 
+ static void destroy_request_info(sapi_request_info *request_info) /* {{{ */
