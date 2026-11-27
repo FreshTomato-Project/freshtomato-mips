@@ -438,7 +438,9 @@ osl_pkt_tonative(osl_t *osh, void *pkt)
 {
 #ifndef WL_UMK
 	struct sk_buff *nskb;
+#ifdef BCMDBG_PKT
 	unsigned long flags;
+#endif
 #endif
 
 	if (osh->pub.pkttag)
@@ -452,9 +454,7 @@ osl_pkt_tonative(osl_t *osh, void *pkt)
 		pktlist_remove(&(osh->pktlist), (void *) nskb);
 		spin_unlock_irqrestore(&osh->pktlist_lock, flags);
 #endif  /* BCMDBG_PKT */
-		spin_lock_irqsave(&osh->pktalloc_lock, flags);
-		osh->pub.pktalloced--;
-		spin_unlock_irqrestore(&osh->pktalloc_lock, flags);
+		atomic_dec(&osh->pktalloced);
 	}
 #endif /* WL_UMK */
 	return (struct sk_buff *)pkt;
@@ -474,7 +474,9 @@ osl_pkt_frmnative(osl_t *osh, void *pkt)
 {
 #ifndef WL_UMK
 	struct sk_buff *nskb;
+#ifdef BCMDBG_PKT
 	unsigned long flags;
+#endif
 #endif
 
 	if (osh->pub.pkttag)
@@ -488,9 +490,7 @@ osl_pkt_frmnative(osl_t *osh, void *pkt)
 		pktlist_add(&(osh->pktlist), (void *) nskb, line, file);
 		spin_unlock_irqrestore(&osh->pktlist_lock, flags);
 #endif  /* BCMDBG_PKT */
-		spin_lock_irqsave(&osh->pktalloc_lock, flags);
-		osh->pub.pktalloced++;
-		spin_unlock_irqrestore(&osh->pktalloc_lock, flags);
+		atomic_inc(&osh->pktalloced);
 	}
 #endif /* WL_UMK */				   
 	return (void *)pkt;
@@ -506,7 +506,9 @@ osl_pktget(osl_t *osh, uint len)
 #endif /* BCMDBG_PKT */
 {
 	struct sk_buff *skb;
+#ifdef BCMDBG_PKT
 	unsigned long flags;
+#endif
 
 #ifdef CTFPOOL
 	/* Allocate from local pool */
@@ -524,9 +526,7 @@ osl_pktget(osl_t *osh, uint len)
 		spin_unlock_irqrestore(&osh->pktlist_lock, flags);
 #endif
 
-		spin_lock_irqsave(&osh->pktalloc_lock, flags);
-		osh->pub.pktalloced++;
-		spin_unlock_irqrestore(&osh->pktalloc_lock, flags);
+		atomic_inc(&osh->pktalloced);
 	}
 
 	return ((void*) skb);
@@ -579,7 +579,9 @@ void BCMFASTPATH
 osl_pktfree(osl_t *osh, void *p, bool send)
 {
 	struct sk_buff *skb, *nskb;
+#ifdef BCMDBG_PKT
 	unsigned long flags;
+#endif
 
 	skb = (struct sk_buff*) p;
 
@@ -624,9 +626,7 @@ osl_pktfree(osl_t *osh, void *p, bool send)
 				 */
 				dev_kfree_skb(skb);
 		}
-	spin_lock_irqsave(&osh->pktalloc_lock, flags);
-		osh->pub.pktalloced--;
-	spin_unlock_irqrestore(&osh->pktalloc_lock, flags);
+		atomic_dec(&osh->pktalloced);
 		skb = nskb;
 	}
 }
@@ -1109,7 +1109,9 @@ osl_pktdup(osl_t *osh, void *skb)
 #endif /* BCMDBG_PKT */
 {
 	void * p;
+#ifdef BCMDBG_PKT
 	unsigned long flags;
+#endif
 
 	/* clear the CTFBUF flag if set and map the reset of the buffer
 	 * before cloning
@@ -1144,9 +1146,7 @@ osl_pktdup(osl_t *osh, void *skb)
 		bzero((void*)((struct sk_buff *)p)->cb, OSL_PKTTAG_SZ);
 
 	/* Increment the packet counter */
-	spin_lock_irqsave(&osh->pktalloc_lock, flags);
-	osh->pub.pktalloced++;
-	spin_unlock_irqrestore(&osh->pktalloc_lock, flags);
+	atomic_inc(&osh->pktalloced);
 #ifdef BCMDBG_PKT
 	spin_lock_irqsave(&osh->pktlist_lock, flags);
 	pktlist_add(&(osh->pktlist), (void *) p, line, file);
@@ -1265,7 +1265,7 @@ osl_sysuptime(void)
 uint
 osl_pktalloced(osl_t *osh)
 {
-	return (osh->pub.pktalloced);
+	return (atomic_read(&osh->pktalloced));
 }
 
 int
